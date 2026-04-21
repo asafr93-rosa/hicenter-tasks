@@ -1,3 +1,5 @@
+import { useDraggable } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 import type { Task, TaskStatus } from '../types/index';
 import { formatDate, isOverdue } from '../utils/date';
 
@@ -10,9 +12,9 @@ interface TaskCardProps {
 const STATUS_SEQUENCE: TaskStatus[] = ['set', 'in-progress', 'done'];
 
 const STATUS_STYLE: Record<TaskStatus, { bg: string; color: string; label: string }> = {
-  'set': { bg: '#F3F4F6', color: '#6B7280', label: 'Set' },
+  'set':         { bg: '#F3F4F6', color: '#6B7280', label: 'Set' },
   'in-progress': { bg: '#FEF3C7', color: '#D97706', label: 'In Progress' },
-  'done': { bg: '#D1FAE5', color: '#059669', label: 'Done' },
+  'done':        { bg: '#D1FAE5', color: '#059669', label: 'Done' },
 };
 
 export function TaskCard({ task, onClick, onStatusChange }: TaskCardProps) {
@@ -21,6 +23,11 @@ export function TaskCard({ task, onClick, onStatusChange }: TaskCardProps) {
   const canGoBack = currentIndex > 0;
   const canGoForward = currentIndex < STATUS_SEQUENCE.length - 1;
   const st = STATUS_STYLE[task.status];
+
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: task.id,
+    data: { task },
+  });
 
   function movePrev(e: React.MouseEvent) {
     e.stopPropagation();
@@ -34,9 +41,24 @@ export function TaskCard({ task, onClick, onStatusChange }: TaskCardProps) {
 
   return (
     <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
       onClick={onClick}
-      className="bg-white rounded-xl p-3 cursor-pointer"
-      style={{ border: '1px solid #E5E7EB', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}
+      className="bg-white rounded-xl p-3"
+      style={{
+        border: '1px solid #E5E7EB',
+        boxShadow: isDragging
+          ? '0 12px 28px rgba(0,0,0,0.18)'
+          : '0 1px 3px rgba(0,0,0,0.06)',
+        opacity: isDragging ? 0.45 : 1,
+        transform: CSS.Translate.toString(transform),
+        cursor: isDragging ? 'grabbing' : 'grab',
+        transition: isDragging ? 'none' : 'box-shadow 0.15s',
+        zIndex: isDragging ? 50 : undefined,
+        position: 'relative',
+        touchAction: 'none',
+      }}
     >
       {/* Title + overdue dot */}
       <div className="flex items-start gap-2 mb-2">
@@ -48,14 +70,12 @@ export function TaskCard({ task, onClick, onStatusChange }: TaskCardProps) {
         </p>
       </div>
 
-      {/* Description preview */}
       {task.description && (
         <p className="text-xs mb-2 line-clamp-2" style={{ color: '#9CA3AF' }}>
           {task.description}
         </p>
       )}
 
-      {/* Dates */}
       {(task.startDate || task.dueDate) && (
         <p className="text-xs mb-2" style={{ color: '#9CA3AF' }}>
           {task.startDate && formatDate(task.startDate)}
@@ -81,7 +101,7 @@ export function TaskCard({ task, onClick, onStatusChange }: TaskCardProps) {
             onClick={movePrev}
             disabled={!canGoBack}
             title="Move back"
-            className="w-6 h-6 rounded flex items-center justify-center text-xs cursor-pointer transition-opacity"
+            className="w-6 h-6 rounded flex items-center justify-center text-xs cursor-pointer"
             style={{
               background: '#F3F4F6',
               color: canGoBack ? '#6B7280' : '#D1D5DB',
@@ -95,7 +115,7 @@ export function TaskCard({ task, onClick, onStatusChange }: TaskCardProps) {
             onClick={moveNext}
             disabled={!canGoForward}
             title="Move forward"
-            className="w-6 h-6 rounded flex items-center justify-center text-xs cursor-pointer transition-opacity"
+            className="w-6 h-6 rounded flex items-center justify-center text-xs cursor-pointer"
             style={{
               background: '#F3F4F6',
               color: canGoForward ? '#6B7280' : '#D1D5DB',
