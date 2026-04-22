@@ -19,7 +19,7 @@ export function Header({ viewMode, onViewChange }: HeaderProps) {
   return (
     <header
       className="flex items-center justify-between px-4 md:px-6 h-14 shrink-0"
-      style={{ background: '#fff', borderBottom: '1px solid #E5E7EB' }}
+      style={{ background: '#F0F4F9', borderBottom: '1px solid #E5E7EB' }}
     >
       {/* Logo */}
       <Logo size="sm" />
@@ -32,7 +32,7 @@ export function Header({ viewMode, onViewChange }: HeaderProps) {
             onClick={() => onViewChange(v.value)}
             className="px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer"
             style={{
-              background: viewMode === v.value ? '#00B5AD' : '#fff',
+              background: viewMode === v.value ? '#00B5AD' : '#F0F4F9',
               color: viewMode === v.value ? '#fff' : '#6B7280',
               border: 'none',
             }}
@@ -50,7 +50,7 @@ export function Header({ viewMode, onViewChange }: HeaderProps) {
         <button
           onClick={logout}
           className="px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors"
-          style={{ background: '#F3F4F6', color: '#6B7280', border: 'none' }}
+          style={{ background: '#E2E8F0', color: '#6B7280', border: 'none' }}
         >
           Sign Out
         </button>
