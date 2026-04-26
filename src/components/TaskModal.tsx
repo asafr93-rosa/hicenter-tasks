@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { Task, TaskFormData, TaskStatus } from '../types/index';
+import type { Task, TaskFormData, TaskStatus, TaskPriority } from '../types/index';
 import { today } from '../utils/date';
 
 interface TaskModalProps {
@@ -16,10 +16,17 @@ const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: 'done', label: 'Done' },
 ];
 
+const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] = [
+  { value: 'high', label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Low' },
+];
+
 export function TaskModal({ task, defaultStatus = 'set', onSave, onDelete, onClose }: TaskModalProps) {
   const [title, setTitle] = useState(task?.title ?? '');
   const [description, setDescription] = useState(task?.description ?? '');
   const [status, setStatus] = useState<TaskStatus>(task?.status ?? defaultStatus);
+  const [priority, setPriority] = useState<TaskPriority>(task?.priority ?? 'medium');
   const [startDate, setStartDate] = useState(task?.startDate ?? today());
   const [dueDate, setDueDate] = useState(task?.dueDate ?? '');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -33,7 +40,7 @@ export function TaskModal({ task, defaultStatus = 'set', onSave, onDelete, onClo
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
-    onSave({ title: title.trim(), description: description.trim(), status, startDate, dueDate });
+    onSave({ title: title.trim(), description: description.trim(), status, priority, startDate, dueDate });
     onClose();
   }
 
@@ -102,20 +109,36 @@ export function TaskModal({ task, defaultStatus = 'set', onSave, onDelete, onClo
             />
           </div>
 
-          {/* Status */}
-          <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: '#6B7280' }}>Status</label>
-            <select
-              value={status}
-              onChange={e => setStatus(e.target.value as TaskStatus)}
-              style={{ ...inputStyle, cursor: 'pointer' }}
-              onFocus={e => (e.target.style.borderColor = '#00B5AD')}
-              onBlur={e => (e.target.style.borderColor = '#E5E7EB')}
-            >
-              {STATUS_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+          {/* Status + Priority */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: '#6B7280' }}>Status</label>
+              <select
+                value={status}
+                onChange={e => setStatus(e.target.value as TaskStatus)}
+                style={{ ...inputStyle, cursor: 'pointer' }}
+                onFocus={e => (e.target.style.borderColor = '#00B5AD')}
+                onBlur={e => (e.target.style.borderColor = '#E5E7EB')}
+              >
+                {STATUS_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1" style={{ color: '#6B7280' }}>Priority</label>
+              <select
+                value={priority}
+                onChange={e => setPriority(e.target.value as TaskPriority)}
+                style={{ ...inputStyle, cursor: 'pointer' }}
+                onFocus={e => (e.target.style.borderColor = '#00B5AD')}
+                onBlur={e => (e.target.style.borderColor = '#E5E7EB')}
+              >
+                {PRIORITY_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Dates */}

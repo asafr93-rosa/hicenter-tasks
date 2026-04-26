@@ -11,7 +11,7 @@ import {
   type DragStartEvent,
   type DragOverEvent,
 } from '@dnd-kit/core';
-import type { Task, TaskStatus } from '../types/index';
+import type { Task, TaskStatus, TaskPriority } from '../types/index';
 import { TaskCard } from './TaskCard';
 import { DoneEffect } from './DoneEffect';
 
@@ -20,13 +20,41 @@ interface KanbanBoardProps {
   onEditTask: (task: Task) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
   onAddTask: (status: TaskStatus) => void;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
 }
+
+type KanbanSortKey = 'priority' | 'dueDate' | 'title' | 'startDate';
 
 const COLUMNS: { status: TaskStatus; label: string; color: string }[] = [
   { status: 'set',         label: 'Set',         color: '#6B7280' },
   { status: 'in-progress', label: 'In Progress',  color: '#D97706' },
   { status: 'done',        label: 'Done',         color: '#059669' },
 ];
+
+const PRIORITY_ORDER: Record<TaskPriority, number> = { 'high': 0, 'medium': 1, 'low': 2 };
+
+const SORT_OPTIONS: { key: KanbanSortKey; label: string }[] = [
+  { key: 'priority', label: 'Priority' },
+  { key: 'dueDate',  label: 'Due Date' },
+  { key: 'startDate', label: 'Start Date' },
+  { key: 'title',    label: 'Title' },
+];
+
+function sortTasks(tasks: Task[], key: KanbanSortKey): Task[] {
+  return [...tasks].sort((a, b) => {
+    if (key === 'priority') {
+      return PRIORITY_ORDER[a.priority ?? 'medium'] - PRIORITY_ORDER[b.priority ?? 'medium'];
+    }
+    if (key === 'dueDate') {
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      return a.dueDate.localeCompare(b.dueDate);
+    }
+    if (key === 'startDate') return (a.startDate ?? '').localeCompare(b.startDate ?? '');
+    return a.title.localeCompare(b.title);
+  });
+}
 
 interface DroppableColumnProps {
   col: typeof COLUMNS[number];
@@ -35,9 +63,11 @@ interface DroppableColumnProps {
   onStatusChange: (id: string, status: TaskStatus) => void;
   onAddTask: (status: TaskStatus) => void;
   isDragOver: boolean;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
 }
 
-function DroppableColumn({ col, tasks, onEditTask, onStatusChange, onAddTask, isDragOver }: DroppableColumnProps) {
+function DroppableColumn({ col, tasks, onEditTask, onStatusChange, onAddTask, isDragOver, selectedIds, onToggleSelect }: DroppableColumnProps) {
   const { setNodeRef } = useDroppable({ id: col.status });
 
   return (
@@ -51,7 +81,6 @@ function DroppableColumn({ col, tasks, onEditTask, onStatusChange, onAddTask, is
         transition: 'background 0.15s, outline 0.15s',
       }}
     >
-      {/* Column header */}
       <div className="flex items-center justify-between px-3 pt-3 pb-2">
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full" style={{ background: col.color }} />
@@ -62,7 +91,6 @@ function DroppableColumn({ col, tasks, onEditTask, onStatusChange, onAddTask, is
         </span>
       </div>
 
-      {/* Cards */}
       <div className="flex-1 overflow-y-auto px-3 pb-3 flex flex-col gap-2">
         {tasks.map(task => (
           <TaskCard
@@ -70,6 +98,8 @@ function DroppableColumn({ col, tasks, onEditTask, onStatusChange, onAddTask, is
             task={task}
             onClick={() => onEditTask(task)}
             onStatusChange={status => onStatusChange(task.id, status)}
+            isSelected={selectedIds.has(task.id)}
+            onToggleSelect={onToggleSelect}
           />
         ))}
         <button
@@ -84,10 +114,11 @@ function DroppableColumn({ col, tasks, onEditTask, onStatusChange, onAddTask, is
   );
 }
 
-export function KanbanBoard({ tasks, onEditTask, onStatusChange, onAddTask }: KanbanBoardProps) {
+export function KanbanBoard({ tasks, onEditTask, onStatusChange, onAddTask, selectedIds, onToggleSelect }: KanbanBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
   const [showDoneEffect, setShowDoneEffect] = useState(false);
+  const [sortKey, setSortKey] = useState<KanbanSortKey>('priority');
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -120,7 +151,6 @@ export function KanbanBoard({ tasks, onEditTask, onStatusChange, onAddTask }: Ka
 
   const hideDoneEffect = useCallback(() => setShowDoneEffect(false), []);
 
-  // Also show effect when status buttons move a card to done
   function handleStatusChange(id: string, status: TaskStatus) {
     onStatusChange(id, status);
     if (status === 'done') setShowDoneEffect(true);
@@ -128,6 +158,25 @@ export function KanbanBoard({ tasks, onEditTask, onStatusChange, onAddTask }: Ka
 
   return (
     <>
+      {/* Sort bar */}
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xs" style={{ color: '#9CA3AF' }}>Sort by:</span>
+        {SORT_OPTIONS.map(opt => (
+          <button
+            key={opt.key}
+            onClick={() => setSortKey(opt.key)}
+            className="px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer"
+            style={{
+              background: sortKey === opt.key ? '#00B5AD' : '#E5E7EB',
+              color: sortKey === opt.key ? '#fff' : '#6B7280',
+              border: 'none',
+            }}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
@@ -139,16 +188,17 @@ export function KanbanBoard({ tasks, onEditTask, onStatusChange, onAddTask }: Ka
             <DroppableColumn
               key={col.status}
               col={col}
-              tasks={tasks.filter(t => t.status === col.status)}
+              tasks={sortTasks(tasks.filter(t => t.status === col.status), sortKey)}
               onEditTask={onEditTask}
               onStatusChange={handleStatusChange}
               onAddTask={onAddTask}
               isDragOver={dragOverColumn === col.status}
+              selectedIds={selectedIds}
+              onToggleSelect={onToggleSelect}
             />
           ))}
         </div>
 
-        {/* Floating drag preview */}
         <DragOverlay dropAnimation={null}>
           {activeTask && (
             <div style={{ transform: 'rotate(2deg)', opacity: 0.9, pointerEvents: 'none' }}>

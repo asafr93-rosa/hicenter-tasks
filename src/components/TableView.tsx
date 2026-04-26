@@ -1,24 +1,36 @@
 import { useState } from 'react';
-import type { Task, TaskStatus } from '../types/index';
+import type { Task, TaskStatus, TaskPriority } from '../types/index';
 import { formatDate, isOverdue } from '../utils/date';
 
 interface TableViewProps {
   tasks: Task[];
   onEditTask: (task: Task) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onSelectAll: (ids: string[]) => void;
 }
 
-type SortKey = 'title' | 'status' | 'startDate' | 'dueDate';
+type SortKey = 'title' | 'status' | 'priority' | 'startDate' | 'dueDate';
 
 const STATUS_ORDER: Record<TaskStatus, number> = { 'set': 0, 'in-progress': 1, 'done': 2 };
+const PRIORITY_ORDER: Record<TaskPriority, number> = { 'high': 0, 'medium': 1, 'low': 2 };
+
 const STATUS_STYLE: Record<TaskStatus, { bg: string; color: string; label: string }> = {
   'set': { bg: '#F3F4F6', color: '#6B7280', label: 'Set' },
   'in-progress': { bg: '#FEF3C7', color: '#D97706', label: 'In Progress' },
   'done': { bg: '#D1FAE5', color: '#059669', label: 'Done' },
 };
+
+const PRIORITY_STYLE: Record<TaskPriority, { bg: string; color: string; label: string }> = {
+  'high':   { bg: '#FEE2E2', color: '#DC2626', label: 'High' },
+  'medium': { bg: '#FEF3C7', color: '#D97706', label: 'Med' },
+  'low':    { bg: '#F3F4F6', color: '#9CA3AF', label: 'Low' },
+};
+
 const STATUS_SEQUENCE: TaskStatus[] = ['set', 'in-progress', 'done'];
 
-export function TableView({ tasks, onEditTask, onStatusChange }: TableViewProps) {
+export function TableView({ tasks, onEditTask, onStatusChange, selectedIds, onToggleSelect, onSelectAll }: TableViewProps) {
   const [sortKey, setSortKey] = useState<SortKey>('dueDate');
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -31,6 +43,7 @@ export function TableView({ tasks, onEditTask, onStatusChange }: TableViewProps)
     let cmp = 0;
     if (sortKey === 'title') cmp = a.title.localeCompare(b.title);
     else if (sortKey === 'status') cmp = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+    else if (sortKey === 'priority') cmp = PRIORITY_ORDER[a.priority ?? 'medium'] - PRIORITY_ORDER[b.priority ?? 'medium'];
     else if (sortKey === 'startDate') cmp = (a.startDate ?? '').localeCompare(b.startDate ?? '');
     else if (sortKey === 'dueDate') {
       if (!a.dueDate) cmp = 1;
@@ -39,6 +52,8 @@ export function TableView({ tasks, onEditTask, onStatusChange }: TableViewProps)
     }
     return sortAsc ? cmp : -cmp;
   });
+
+  const allSelected = sorted.length > 0 && sorted.every(t => selectedIds.has(t.id));
 
   function SortIcon({ k }: { k: SortKey }) {
     if (sortKey !== k) return <span style={{ color: '#D1D5DB' }}> ↕</span>;
@@ -58,11 +73,22 @@ export function TableView({ tasks, onEditTask, onStatusChange }: TableViewProps)
       <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ borderBottom: '1px solid #E5E7EB', background: '#F9FAFB' }}>
+            {/* Select all checkbox */}
+            <th className="px-4 py-3 w-8">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={() => allSelected ? onSelectAll([]) : onSelectAll(sorted.map(t => t.id))}
+                className="cursor-pointer"
+                style={{ accentColor: '#00B5AD', width: '14px', height: '14px' }}
+              />
+            </th>
             {([
-              { key: 'title', label: 'Title' },
-              { key: 'status', label: 'Status' },
+              { key: 'title',     label: 'Title' },
+              { key: 'status',    label: 'Status' },
+              { key: 'priority',  label: 'Priority' },
               { key: 'startDate', label: 'Start' },
-              { key: 'dueDate', label: 'Due' },
+              { key: 'dueDate',   label: 'Due' },
             ] as { key: SortKey; label: string }[]).map(col => (
               <th
                 key={col.key}
@@ -84,12 +110,27 @@ export function TableView({ tasks, onEditTask, onStatusChange }: TableViewProps)
             const overdue = isOverdue(task.dueDate, task.status);
             const st = STATUS_STYLE[task.status];
             const idx = STATUS_SEQUENCE.indexOf(task.status);
+            const priority = task.priority ?? 'medium';
+            const pt = PRIORITY_STYLE[priority];
+            const selected = selectedIds.has(task.id);
 
             return (
               <tr
                 key={task.id}
-                style={{ borderBottom: i < sorted.length - 1 ? '1px solid #F3F4F6' : 'none' }}
+                style={{
+                  borderBottom: i < sorted.length - 1 ? '1px solid #F3F4F6' : 'none',
+                  background: selected ? '#F0FDFB' : undefined,
+                }}
               >
+                <td className="px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() => onToggleSelect(task.id)}
+                    className="cursor-pointer"
+                    style={{ accentColor: '#00B5AD', width: '14px', height: '14px' }}
+                  />
+                </td>
                 <td className="px-4 py-3 font-medium" style={{ color: '#1A2B4A', minWidth: '140px', maxWidth: '220px' }}>
                   <div className="flex items-center gap-1.5">
                     {overdue && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: '#DC2626' }} />}
@@ -108,6 +149,14 @@ export function TableView({ tasks, onEditTask, onStatusChange }: TableViewProps)
                   >
                     {st.label}
                   </button>
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className="px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap"
+                    style={{ background: pt.bg, color: pt.color }}
+                  >
+                    {pt.label}
+                  </span>
                 </td>
                 <td className="px-4 py-3 text-xs" style={{ color: '#9CA3AF', whiteSpace: 'nowrap' }}>
                   {task.startDate ? formatDate(task.startDate) : '—'}

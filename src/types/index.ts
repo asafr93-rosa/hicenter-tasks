@@ -4,6 +4,7 @@ export interface User {
 }
 
 export type TaskStatus = 'set' | 'in-progress' | 'done';
+export type TaskPriority = 'low' | 'medium' | 'high';
 
 export interface Task {
   id: string;
@@ -11,6 +12,7 @@ export interface Task {
   title: string;
   description: string;
   status: TaskStatus;
+  priority: TaskPriority;
   startDate: string;
   dueDate: string;
   createdAt: string;
@@ -22,6 +24,7 @@ export interface TaskFormData {
   title: string;
   description: string;
   status: TaskStatus;
+  priority: TaskPriority;
   startDate: string;
   dueDate: string;
 }

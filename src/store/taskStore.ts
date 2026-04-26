@@ -7,6 +7,7 @@ interface TaskState {
   addTask: (task: Omit<Task, 'id' | 'createdAt'>) => void;
   updateTask: (id: string, updates: Partial<Omit<Task, 'id' | 'userId' | 'createdAt'>>) => void;
   deleteTask: (id: string) => void;
+  bulkUpdateTasks: (ids: string[], updates: Partial<Omit<Task, 'id' | 'userId' | 'createdAt'>>) => void;
 }
 
 export const useTaskStore = create<TaskState>()(
@@ -31,6 +32,12 @@ export const useTaskStore = create<TaskState>()(
 
       deleteTask: (id) => {
         set(state => ({ tasks: state.tasks.filter(t => t.id !== id) }));
+      },
+
+      bulkUpdateTasks: (ids, updates) => {
+        set(state => ({
+          tasks: state.tasks.map(t => ids.includes(t.id) ? { ...t, ...updates } : t),
+        }));
       },
     }),
     { name: 'hicenter-tasks' }
