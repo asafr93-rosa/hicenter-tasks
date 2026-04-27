@@ -24,7 +24,8 @@ interface KanbanBoardProps {
   onToggleSelect: (id: string) => void;
 }
 
-type KanbanSortKey = 'priority' | 'dueDate' | 'title' | 'startDate';
+type SortKey = 'priority' | 'category' | 'dueDate' | 'startDate' | 'title';
+type SortLevel = { key: SortKey; asc: boolean };
 
 const COLUMNS: { status: TaskStatus; label: string; color: string }[] = [
   { status: 'set',         label: 'Set',         color: '#6B7280' },
@@ -34,25 +35,34 @@ const COLUMNS: { status: TaskStatus; label: string; color: string }[] = [
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = { 'high': 0, 'medium': 1, 'low': 2 };
 
-const SORT_OPTIONS: { key: KanbanSortKey; label: string }[] = [
-  { key: 'priority', label: 'Priority' },
-  { key: 'dueDate',  label: 'Due Date' },
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: 'priority',  label: 'Priority' },
+  { key: 'category',  label: 'Category' },
+  { key: 'dueDate',   label: 'Due Date' },
   { key: 'startDate', label: 'Start Date' },
-  { key: 'title',    label: 'Title' },
+  { key: 'title',     label: 'Title' },
 ];
 
-function sortTasks(tasks: Task[], key: KanbanSortKey): Task[] {
-  return [...tasks].sort((a, b) => {
-    if (key === 'priority') {
-      return PRIORITY_ORDER[a.priority ?? 'medium'] - PRIORITY_ORDER[b.priority ?? 'medium'];
-    }
-    if (key === 'dueDate') {
+function compareByKey(a: Task, b: Task, key: SortKey): number {
+  switch (key) {
+    case 'priority':  return PRIORITY_ORDER[a.priority ?? 'medium'] - PRIORITY_ORDER[b.priority ?? 'medium'];
+    case 'category':  return (a.category ?? '').localeCompare(b.category ?? '');
+    case 'dueDate':
       if (!a.dueDate) return 1;
       if (!b.dueDate) return -1;
       return a.dueDate.localeCompare(b.dueDate);
+    case 'startDate': return (a.startDate ?? '').localeCompare(b.startDate ?? '');
+    case 'title':     return a.title.localeCompare(b.title);
+  }
+}
+
+function sortTasks(tasks: Task[], levels: SortLevel[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    for (const { key, asc } of levels) {
+      const cmp = compareByKey(a, b, key);
+      if (cmp !== 0) return asc ? cmp : -cmp;
     }
-    if (key === 'startDate') return (a.startDate ?? '').localeCompare(b.startDate ?? '');
-    return a.title.localeCompare(b.title);
+    return 0;
   });
 }
 
@@ -118,12 +128,28 @@ export function KanbanBoard({ tasks, onEditTask, onStatusChange, onAddTask, sele
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
   const [showDoneEffect, setShowDoneEffect] = useState(false);
-  const [sortKey, setSortKey] = useState<KanbanSortKey>('priority');
+  const [sortLevels, setSortLevels] = useState<SortLevel[]>([{ key: 'priority', asc: true }]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor,   { activationConstraint: { delay: 200, tolerance: 8 } }),
   );
+
+  function toggleLevelDir(idx: number) {
+    setSortLevels(prev => prev.map((l, i) => i === idx ? { ...l, asc: !l.asc } : l));
+  }
+
+  function removeLevel(idx: number) {
+    setSortLevels(prev => {
+      const next = prev.filter((_, i) => i !== idx);
+      return next.length > 0 ? next : [{ key: 'priority', asc: true }];
+    });
+  }
+
+  function addLevel(key: SortKey) {
+    if (sortLevels.find(l => l.key === key)) return;
+    setSortLevels(prev => [...prev, { key, asc: true }]);
+  }
 
   function handleDragStart(event: DragStartEvent) {
     const task = tasks.find(t => t.id === event.active.id);
@@ -156,25 +182,50 @@ export function KanbanBoard({ tasks, onEditTask, onStatusChange, onAddTask, sele
     if (status === 'done') setShowDoneEffect(true);
   }
 
+  const availableOpts = SORT_OPTIONS.filter(o => !sortLevels.find(l => l.key === o.key));
+
   return (
     <>
       {/* Sort bar */}
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-xs" style={{ color: '#9CA3AF' }}>Sort by:</span>
-        {SORT_OPTIONS.map(opt => (
-          <button
-            key={opt.key}
-            onClick={() => setSortKey(opt.key)}
-            className="px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer"
-            style={{
-              background: sortKey === opt.key ? '#00B5AD' : '#E5E7EB',
-              color: sortKey === opt.key ? '#fff' : '#6B7280',
-              border: 'none',
-            }}
-          >
-            {opt.label}
-          </button>
+      <div className="flex items-center gap-1.5 flex-wrap mb-3">
+        <span className="text-xs" style={{ color: '#9CA3AF' }}>Sort:</span>
+
+        {sortLevels.map((level, i) => (
+          <div key={i} className="flex items-center gap-0.5">
+            {i > 0 && <span className="text-xs mx-0.5" style={{ color: '#D1D5DB' }}>›</span>}
+            <div className="flex items-center rounded-lg overflow-hidden" style={{ border: '1px solid #C4C9D4' }}>
+              <button
+                onClick={() => toggleLevelDir(i)}
+                className="px-2.5 py-1 text-xs font-medium cursor-pointer"
+                style={{ background: '#00B5AD', color: '#fff', border: 'none' }}
+              >
+                {SORT_OPTIONS.find(o => o.key === level.key)?.label} {level.asc ? '↑' : '↓'}
+              </button>
+              {sortLevels.length > 1 && (
+                <button
+                  onClick={() => removeLevel(i)}
+                  className="px-1.5 py-1 text-xs cursor-pointer"
+                  style={{ background: '#E5E7EB', color: '#9CA3AF', border: 'none', borderLeft: '1px solid #D1D5DB' }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
         ))}
+
+        {availableOpts.length > 0 && (
+          <select
+            value=""
+            onChange={e => { if (e.target.value) addLevel(e.target.value as SortKey); }}
+            style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #C4C9D4', fontSize: '11px', color: '#9CA3AF', background: '#fff', cursor: 'pointer', outline: 'none' }}
+          >
+            <option value="">+ Add level</option>
+            {availableOpts.map(o => (
+              <option key={o.key} value={o.key}>{o.label}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       <DndContext
@@ -188,7 +239,7 @@ export function KanbanBoard({ tasks, onEditTask, onStatusChange, onAddTask, sele
             <DroppableColumn
               key={col.status}
               col={col}
-              tasks={sortTasks(tasks.filter(t => t.status === col.status), sortKey)}
+              tasks={sortTasks(tasks.filter(t => t.status === col.status), sortLevels)}
               onEditTask={onEditTask}
               onStatusChange={handleStatusChange}
               onAddTask={onAddTask}

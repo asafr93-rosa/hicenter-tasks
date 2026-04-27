@@ -103,6 +103,12 @@ export function TaskCard({ task, onClick, onStatusChange, isSelected, onToggleSe
         </p>
       )}
 
+      {task.category && (
+        <span className="inline-block text-xs mb-2 px-1.5 py-0 rounded" style={{ background: '#EEF2FF', color: '#6366F1', fontSize: '10px' }}>
+          {task.category}
+        </span>
+      )}
+
       {(task.startDate || task.dueDate) && (
         <p className="text-xs mb-2" style={{ color: '#9CA3AF' }}>
           {task.startDate && formatDate(task.startDate)}

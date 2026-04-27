@@ -31,6 +31,32 @@ const selectStyle: React.CSSProperties = {
   outline: 'none',
 };
 
+function BulkCategoryInput({ onApply, selectStyle }: { onApply: (cat: string) => void; selectStyle: React.CSSProperties }) {
+  const [val, setVal] = useState('');
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-xs" style={{ color: '#6B7280' }}>Category:</span>
+      <input
+        type="text"
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        placeholder="Set…"
+        style={{ ...selectStyle, width: '80px' }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { onApply(val); setVal(''); }
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => { onApply(val); setVal(''); }}
+        style={{ ...selectStyle, padding: '4px 6px', cursor: 'pointer' }}
+      >
+        ✓
+      </button>
+    </div>
+  );
+}
+
 export function Board() {
   const { currentUser } = useAuthStore();
   const { tasks, addTask, updateTask, deleteTask, bulkUpdateTasks } = useTaskStore();
@@ -171,6 +197,7 @@ export function Board() {
                 style={{ ...selectStyle, color: '#6B7280' }}
               />
             </div>
+            <BulkCategoryInput onApply={cat => bulkUpdate({ category: cat || undefined })} selectStyle={selectStyle} />
           </div>
         )}
 

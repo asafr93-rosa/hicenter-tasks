@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Task, TaskFormData, TaskStatus, TaskPriority } from '../types/index';
 import { today } from '../utils/date';
+import { useTaskStore } from '../store/taskStore';
 
 interface TaskModalProps {
   task?: Task | null;
@@ -23,13 +24,17 @@ const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] = [
 ];
 
 export function TaskModal({ task, defaultStatus = 'set', onSave, onDelete, onClose }: TaskModalProps) {
+  const { tasks } = useTaskStore();
   const [title, setTitle] = useState(task?.title ?? '');
   const [description, setDescription] = useState(task?.description ?? '');
   const [status, setStatus] = useState<TaskStatus>(task?.status ?? defaultStatus);
   const [priority, setPriority] = useState<TaskPriority>(task?.priority ?? 'medium');
+  const [category, setCategory] = useState(task?.category ?? '');
   const [startDate, setStartDate] = useState(task?.startDate ?? today());
   const [dueDate, setDueDate] = useState(task?.dueDate ?? '');
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const existingCategories = Array.from(new Set(tasks.map(t => t.category).filter(Boolean))) as string[];
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -40,7 +45,7 @@ export function TaskModal({ task, defaultStatus = 'set', onSave, onDelete, onClo
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
-    onSave({ title: title.trim(), description: description.trim(), status, priority, startDate, dueDate });
+    onSave({ title: title.trim(), description: description.trim(), status, priority, category: category.trim() || undefined, startDate, dueDate });
     onClose();
   }
 
@@ -107,6 +112,26 @@ export function TaskModal({ task, defaultStatus = 'set', onSave, onDelete, onClo
               onFocus={e => (e.target.style.borderColor = '#00B5AD')}
               onBlur={e => (e.target.style.borderColor = '#E5E7EB')}
             />
+          </div>
+
+          {/* Category */}
+          <div>
+            <label className="block text-xs font-medium mb-1" style={{ color: '#6B7280' }}>Category</label>
+            <input
+              type="text"
+              list="category-suggestions"
+              value={category}
+              onChange={e => setCategory(e.target.value)}
+              placeholder="e.g. Marketing, Dev, Design…"
+              style={inputStyle}
+              onFocus={e => (e.target.style.borderColor = '#00B5AD')}
+              onBlur={e => (e.target.style.borderColor = '#E5E7EB')}
+            />
+            {existingCategories.length > 0 && (
+              <datalist id="category-suggestions">
+                {existingCategories.map(c => <option key={c} value={c} />)}
+              </datalist>
+            )}
           </div>
 
           {/* Status + Priority */}

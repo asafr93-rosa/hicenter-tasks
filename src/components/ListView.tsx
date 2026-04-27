@@ -11,7 +11,8 @@ interface ListViewProps {
   onSelectAll: (ids: string[]) => void;
 }
 
-type SortKey = 'title' | 'status' | 'priority' | 'startDate' | 'dueDate';
+type SortKey = 'title' | 'status' | 'priority' | 'category' | 'startDate' | 'dueDate';
+type SortLevel = { key: SortKey; asc: boolean };
 
 const STATUS_SEQUENCE: TaskStatus[] = ['set', 'in-progress', 'done'];
 const STATUS_ORDER: Record<TaskStatus, number> = { 'set': 0, 'in-progress': 1, 'done': 2 };
@@ -34,34 +35,54 @@ const SORT_COLS: { key: SortKey; label: string }[] = [
   { key: 'title',     label: 'Title' },
   { key: 'status',    label: 'Status' },
   { key: 'priority',  label: 'Priority' },
+  { key: 'category',  label: 'Category' },
   { key: 'startDate', label: 'Start' },
   { key: 'dueDate',   label: 'Due' },
 ];
 
-export function ListView({ tasks, onEditTask, onStatusChange, selectedIds, onToggleSelect, onSelectAll }: ListViewProps) {
-  const [sortKey, setSortKey] = useState<SortKey>('dueDate');
-  const [sortAsc, setSortAsc] = useState(true);
+function compareByKey(a: Task, b: Task, key: SortKey): number {
+  switch (key) {
+    case 'title':     return a.title.localeCompare(b.title);
+    case 'status':    return STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+    case 'priority':  return PRIORITY_ORDER[a.priority ?? 'medium'] - PRIORITY_ORDER[b.priority ?? 'medium'];
+    case 'category':  return (a.category ?? '').localeCompare(b.category ?? '');
+    case 'startDate': return (a.startDate ?? '').localeCompare(b.startDate ?? '');
+    case 'dueDate':
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      return a.dueDate.localeCompare(b.dueDate);
+  }
+}
 
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) setSortAsc(a => !a);
-    else { setSortKey(key); setSortAsc(true); }
+export function ListView({ tasks, onEditTask, onStatusChange, selectedIds, onToggleSelect, onSelectAll }: ListViewProps) {
+  const [sortLevels, setSortLevels] = useState<SortLevel[]>([{ key: 'dueDate', asc: true }]);
+
+  function toggleLevelDir(idx: number) {
+    setSortLevels(prev => prev.map((l, i) => i === idx ? { ...l, asc: !l.asc } : l));
+  }
+
+  function removeLevel(idx: number) {
+    setSortLevels(prev => {
+      const next = prev.filter((_, i) => i !== idx);
+      return next.length > 0 ? next : [{ key: 'dueDate', asc: true }];
+    });
+  }
+
+  function addLevel(key: SortKey) {
+    if (sortLevels.find(l => l.key === key)) return;
+    setSortLevels(prev => [...prev, { key, asc: true }]);
   }
 
   const sorted = [...tasks].sort((a, b) => {
-    let cmp = 0;
-    if (sortKey === 'title') cmp = a.title.localeCompare(b.title);
-    else if (sortKey === 'status') cmp = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
-    else if (sortKey === 'priority') cmp = PRIORITY_ORDER[a.priority ?? 'medium'] - PRIORITY_ORDER[b.priority ?? 'medium'];
-    else if (sortKey === 'startDate') cmp = (a.startDate ?? '').localeCompare(b.startDate ?? '');
-    else if (sortKey === 'dueDate') {
-      if (!a.dueDate) cmp = 1;
-      else if (!b.dueDate) cmp = -1;
-      else cmp = a.dueDate.localeCompare(b.dueDate);
+    for (const { key, asc } of sortLevels) {
+      const cmp = compareByKey(a, b, key);
+      if (cmp !== 0) return asc ? cmp : -cmp;
     }
-    return sortAsc ? cmp : -cmp;
+    return 0;
   });
 
   const allSelected = sorted.length > 0 && sorted.every(t => selectedIds.has(t.id));
+  const availableCols = SORT_COLS.filter(c => !sortLevels.find(l => l.key === c.key));
 
   if (tasks.length === 0) {
     return (
@@ -71,38 +92,55 @@ export function ListView({ tasks, onEditTask, onStatusChange, selectedIds, onTog
     );
   }
 
-  function SortIcon({ k }: { k: SortKey }) {
-    if (sortKey !== k) return <span style={{ color: '#D1D5DB' }}> ↕</span>;
-    return <span style={{ color: '#00B5AD' }}>{sortAsc ? ' ↑' : ' ↓'}</span>;
-  }
-
   return (
     <div className="flex flex-col gap-2 max-w-2xl mx-auto w-full">
       {/* Sort header */}
-      <div className="flex items-center gap-1 px-1 pb-1">
+      <div className="flex items-center gap-1.5 flex-wrap px-1 pb-1">
         <input
           type="checkbox"
           checked={allSelected}
           onChange={() => allSelected ? onSelectAll([]) : onSelectAll(sorted.map(t => t.id))}
           className="cursor-pointer shrink-0"
-          style={{ accentColor: '#00B5AD', width: '14px', height: '14px', marginRight: '6px' }}
+          style={{ accentColor: '#00B5AD', width: '14px', height: '14px', marginRight: '4px' }}
         />
-        <span className="text-xs mr-1" style={{ color: '#9CA3AF' }}>Sort:</span>
-        {SORT_COLS.map(col => (
-          <button
-            key={col.key}
-            onClick={() => toggleSort(col.key)}
-            className="px-2 py-0.5 rounded text-xs cursor-pointer select-none"
-            style={{
-              background: sortKey === col.key ? '#E0F7F5' : 'transparent',
-              color: sortKey === col.key ? '#00B5AD' : '#9CA3AF',
-              border: 'none',
-              fontWeight: sortKey === col.key ? 600 : 400,
-            }}
-          >
-            {col.label}<SortIcon k={col.key} />
-          </button>
+        <span className="text-xs" style={{ color: '#9CA3AF' }}>Sort:</span>
+
+        {sortLevels.map((level, i) => (
+          <div key={i} className="flex items-center gap-0.5">
+            {i > 0 && <span className="text-xs mx-0.5" style={{ color: '#D1D5DB' }}>›</span>}
+            <div className="flex items-center rounded overflow-hidden" style={{ border: '1px solid #C4C9D4' }}>
+              <button
+                onClick={() => toggleLevelDir(i)}
+                className="px-2 py-0.5 text-xs font-medium cursor-pointer"
+                style={{ background: '#E0F7F5', color: '#00B5AD', border: 'none' }}
+              >
+                {SORT_COLS.find(c => c.key === level.key)?.label} {level.asc ? '↑' : '↓'}
+              </button>
+              {sortLevels.length > 1 && (
+                <button
+                  onClick={() => removeLevel(i)}
+                  className="px-1.5 py-0.5 text-xs cursor-pointer"
+                  style={{ background: '#F3F4F6', color: '#9CA3AF', border: 'none', borderLeft: '1px solid #E5E7EB' }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
         ))}
+
+        {availableCols.length > 0 && (
+          <select
+            value=""
+            onChange={e => { if (e.target.value) addLevel(e.target.value as SortKey); }}
+            style={{ padding: '2px 6px', borderRadius: '6px', border: '1px solid #C4C9D4', fontSize: '11px', color: '#9CA3AF', background: '#fff', cursor: 'pointer', outline: 'none' }}
+          >
+            <option value="">+ Add level</option>
+            {availableCols.map(c => (
+              <option key={c.key} value={c.key}>{c.label}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {sorted.map(task => {
@@ -138,11 +176,16 @@ export function ListView({ tasks, onEditTask, onStatusChange, selectedIds, onTog
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#DC2626' }} title="Overdue" />
             )}
 
-            {/* Title + description */}
+            {/* Title + description + category */}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate" style={{ color: '#1A2B4A' }}>{task.title}</p>
               {task.description && (
                 <p className="text-xs truncate mt-0.5" style={{ color: '#9CA3AF' }}>{task.description}</p>
+              )}
+              {task.category && (
+                <span className="inline-block text-xs mt-0.5 px-1.5 py-0 rounded" style={{ background: '#EEF2FF', color: '#6366F1', fontSize: '10px' }}>
+                  {task.category}
+                </span>
               )}
             </div>
 
