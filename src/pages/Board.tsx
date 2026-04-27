@@ -64,8 +64,18 @@ export function Board() {
   const [editingTask, setEditingTask] = useState<Task | null | undefined>(undefined);
   const [defaultStatus, setDefaultStatus] = useState<TaskStatus>('set');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const userTasks = tasks.filter(t => t.userId === currentUser);
+  const userTasks = tasks.filter(t => {
+    if (t.userId !== currentUser) return false;
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      t.title.toLowerCase().includes(q) ||
+      t.description.toLowerCase().includes(q) ||
+      (t.category ?? '').toLowerCase().includes(q)
+    );
+  });
 
   function openNew(status: TaskStatus = 'set') {
     setDefaultStatus(status);
@@ -124,7 +134,7 @@ export function Board() {
 
   return (
     <div className="flex flex-col h-screen" style={{ background: '#F4F7FA' }}>
-      <Header viewMode={viewMode} onViewChange={setViewMode} />
+      <Header viewMode={viewMode} onViewChange={setViewMode} searchQuery={searchQuery} onSearchChange={setSearchQuery} />
 
       <div className="flex-1 overflow-hidden p-4 md:p-5 flex flex-col">
         {/* Top bar */}
@@ -134,7 +144,9 @@ export function Board() {
               {currentUser ? `${currentUser}'s Board` : 'My Board'}
             </h1>
             <p className="text-xs" style={{ color: '#9CA3AF' }}>
-              {userTasks.length} task{userTasks.length !== 1 ? 's' : ''}
+              {searchQuery.trim()
+                ? `${userTasks.length} of ${tasks.filter(t => t.userId === currentUser).length} task${tasks.filter(t => t.userId === currentUser).length !== 1 ? 's' : ''}`
+                : `${userTasks.length} task${userTasks.length !== 1 ? 's' : ''}`}
             </p>
           </div>
           <button

@@ -5,6 +5,8 @@ import type { ViewMode } from '../types/index';
 interface HeaderProps {
   viewMode: ViewMode;
   onViewChange: (v: ViewMode) => void;
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
 }
 
 const VIEWS: { value: ViewMode; label: string }[] = [
@@ -13,16 +15,48 @@ const VIEWS: { value: ViewMode; label: string }[] = [
   { value: 'table', label: 'Table' },
 ];
 
-export function Header({ viewMode, onViewChange }: HeaderProps) {
+export function Header({ viewMode, onViewChange, searchQuery, onSearchChange }: HeaderProps) {
   const { currentUser, logout } = useAuthStore();
 
   return (
     <header
-      className="flex items-center justify-between px-4 md:px-6 h-14 shrink-0"
+      className="flex items-center justify-between gap-3 px-4 md:px-6 h-14 shrink-0"
       style={{ background: '#F0F4F9', borderBottom: '1px solid #E5E7EB' }}
     >
       {/* Logo */}
       <Logo size="sm" />
+
+      {/* Search */}
+      <div className="flex-1 max-w-xs relative">
+        <svg
+          className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+          width="14" height="14" viewBox="0 0 16 16" fill="none"
+        >
+          <circle cx="6.5" cy="6.5" r="5" stroke="#9CA3AF" strokeWidth="1.5" />
+          <path d="M10.5 10.5L14 14" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => onSearchChange(e.target.value)}
+          placeholder="Search tasks…"
+          className="w-full pl-8 pr-3 py-1.5 rounded-lg text-xs outline-none"
+          style={{
+            background: '#fff',
+            border: '1px solid #E5E7EB',
+            color: '#1A2B4A',
+          }}
+        />
+        {searchQuery && (
+          <button
+            onClick={() => onSearchChange('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer"
+            style={{ color: '#9CA3AF', background: 'none', border: 'none', lineHeight: 1 }}
+          >
+            ✕
+          </button>
+        )}
+      </div>
 
       {/* View toggle */}
       <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid #E5E7EB' }}>
