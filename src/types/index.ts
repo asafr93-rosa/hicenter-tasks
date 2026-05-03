@@ -3,8 +3,15 @@ export interface User {
   passwordHash: string;
 }
 
-export type TaskStatus = 'set' | 'in-progress' | 'done';
+export type TaskStatus = string;
 export type TaskPriority = 'low' | 'medium' | 'high';
+
+export interface StatusConfig {
+  id: string;
+  label: string;
+  color: string;
+  order: number;
+}
 
 export interface Task {
   id: string;
@@ -17,6 +24,7 @@ export interface Task {
   startDate: string;
   dueDate: string;
   createdAt: string;
+  parentId?: string;
 }
 
 export type ViewMode = 'kanban' | 'list' | 'table';
@@ -29,4 +37,5 @@ export interface TaskFormData {
   category?: string;
   startDate: string;
   dueDate: string;
+  parentId?: string;
 }

@@ -11,27 +11,24 @@ import {
   type DragStartEvent,
   type DragOverEvent,
 } from '@dnd-kit/core';
-import type { Task, TaskStatus, TaskPriority } from '../types/index';
+import type { Task, TaskStatus, TaskPriority, StatusConfig } from '../types/index';
 import { TaskCard } from './TaskCard';
 import { DoneEffect } from './DoneEffect';
 
 interface KanbanBoardProps {
   tasks: Task[];
+  statuses: StatusConfig[];
   onEditTask: (task: Task) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
   onAddTask: (status: TaskStatus) => void;
+  onAddSubTask: (parentId: string) => void;
+  onAddStatus: (label: string) => void;
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
 }
 
 type SortKey = 'priority' | 'category' | 'dueDate' | 'startDate' | 'title';
 type SortLevel = { key: SortKey; asc: boolean };
-
-const COLUMNS: { status: TaskStatus; label: string; color: string }[] = [
-  { status: 'set',         label: 'Set',         color: '#6B7280' },
-  { status: 'in-progress', label: 'In Progress',  color: '#D97706' },
-  { status: 'done',        label: 'Done',         color: '#059669' },
-];
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = { 'high': 0, 'medium': 1, 'low': 2 };
 
@@ -67,18 +64,21 @@ function sortTasks(tasks: Task[], levels: SortLevel[]): Task[] {
 }
 
 interface DroppableColumnProps {
-  col: typeof COLUMNS[number];
+  col: StatusConfig;
   tasks: Task[];
+  allTasks: Task[];
+  statuses: StatusConfig[];
   onEditTask: (task: Task) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
   onAddTask: (status: TaskStatus) => void;
+  onAddSubTask: (parentId: string) => void;
   isDragOver: boolean;
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
 }
 
-function DroppableColumn({ col, tasks, onEditTask, onStatusChange, onAddTask, isDragOver, selectedIds, onToggleSelect }: DroppableColumnProps) {
-  const { setNodeRef } = useDroppable({ id: col.status });
+function DroppableColumn({ col, tasks, allTasks, statuses, onEditTask, onStatusChange, onAddTask, onAddSubTask, isDragOver, selectedIds, onToggleSelect }: DroppableColumnProps) {
+  const { setNodeRef } = useDroppable({ id: col.id });
 
   return (
     <div
@@ -102,18 +102,25 @@ function DroppableColumn({ col, tasks, onEditTask, onStatusChange, onAddTask, is
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-3 flex flex-col gap-2">
-        {tasks.map(task => (
-          <TaskCard
-            key={task.id}
-            task={task}
-            onClick={() => onEditTask(task)}
-            onStatusChange={status => onStatusChange(task.id, status)}
-            isSelected={selectedIds.has(task.id)}
-            onToggleSelect={onToggleSelect}
-          />
-        ))}
+        {tasks.map(task => {
+          const subTasks = allTasks.filter(t => t.parentId === task.id);
+          return (
+            <TaskCard
+              key={task.id}
+              task={task}
+              statuses={statuses}
+              subTasks={subTasks}
+              onClick={() => onEditTask(task)}
+              onStatusChange={status => onStatusChange(task.id, status)}
+              onAddSubTask={onAddSubTask}
+              onEditSubTask={onEditTask}
+              isSelected={selectedIds.has(task.id)}
+              onToggleSelect={onToggleSelect}
+            />
+          );
+        })}
         <button
-          onClick={() => onAddTask(col.status)}
+          onClick={() => onAddTask(col.id)}
           className="w-full py-2 rounded-lg text-sm font-medium cursor-pointer mt-1"
           style={{ background: 'none', border: '1.5px dashed #C4C9D4', color: '#9CA3AF' }}
         >
@@ -124,9 +131,78 @@ function DroppableColumn({ col, tasks, onEditTask, onStatusChange, onAddTask, is
   );
 }
 
-export function KanbanBoard({ tasks, onEditTask, onStatusChange, onAddTask, selectedIds, onToggleSelect }: KanbanBoardProps) {
+function AddStatusButton({ onAdd }: { onAdd: (label: string) => void }) {
+  const [active, setActive] = useState(false);
+  const [value, setValue] = useState('');
+
+  function submit() {
+    if (value.trim()) { onAdd(value.trim()); setValue(''); }
+    setActive(false);
+  }
+
+  if (!active) {
+    return (
+      <button
+        onClick={() => setActive(true)}
+        className="flex flex-col items-center justify-center rounded-xl cursor-pointer shrink-0"
+        style={{
+          minWidth: '48px',
+          alignSelf: 'flex-start',
+          padding: '10px 8px',
+          background: 'none',
+          border: '1.5px dashed #C4C9D4',
+          color: '#9CA3AF',
+          fontSize: '11px',
+          gap: '4px',
+          marginTop: '0',
+        }}
+        title="Add new status"
+      >
+        <span style={{ fontSize: '18px', lineHeight: 1 }}>+</span>
+        <span>Status</span>
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="flex flex-col rounded-xl shrink-0 p-3"
+      style={{ minWidth: '180px', background: '#ECEEF1', border: '2px solid #00B5AD', alignSelf: 'flex-start' }}
+    >
+      <p className="text-xs font-semibold mb-2" style={{ color: '#1A2B4A' }}>New status name</p>
+      <input
+        autoFocus
+        type="text"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') { setActive(false); setValue(''); } }}
+        placeholder="e.g. Review, Testing…"
+        className="w-full rounded-lg px-2.5 py-1.5 text-sm mb-2"
+        style={{ border: '1.5px solid #C4C9D4', outline: 'none', color: '#1A2B4A', background: '#fff', fontSize: '13px' }}
+      />
+      <div className="flex gap-2">
+        <button
+          onClick={submit}
+          className="flex-1 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
+          style={{ background: '#00B5AD', color: '#fff', border: 'none' }}
+        >
+          Add
+        </button>
+        <button
+          onClick={() => { setActive(false); setValue(''); }}
+          className="py-1.5 px-3 rounded-lg text-xs cursor-pointer"
+          style={{ background: '#E5E7EB', color: '#6B7280', border: 'none' }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAddTask, onAddSubTask, onAddStatus, selectedIds, onToggleSelect }: KanbanBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [showDoneEffect, setShowDoneEffect] = useState(false);
   const [sortLevels, setSortLevels] = useState<SortLevel[]>([{ key: 'priority', asc: true }]);
 
@@ -134,6 +210,8 @@ export function KanbanBoard({ tasks, onEditTask, onStatusChange, onAddTask, sele
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor,   { activationConstraint: { delay: 200, tolerance: 8 } }),
   );
+
+  const sortedStatuses = [...statuses].sort((a, b) => a.order - b.order);
 
   function toggleLevelDir(idx: number) {
     setSortLevels(prev => prev.map((l, i) => i === idx ? { ...l, asc: !l.asc } : l));
@@ -157,7 +235,7 @@ export function KanbanBoard({ tasks, onEditTask, onStatusChange, onAddTask, sele
   }
 
   function handleDragOver(event: DragOverEvent) {
-    setDragOverColumn(event.over ? (String(event.over.id) as TaskStatus) : null);
+    setDragOverColumn(event.over ? String(event.over.id) : null);
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -167,22 +245,25 @@ export function KanbanBoard({ tasks, onEditTask, onStatusChange, onAddTask, sele
     const { active, over } = event;
     if (!over) return;
 
-    const newStatus = over.id as TaskStatus;
+    const newStatus = String(over.id);
     const task = tasks.find(t => t.id === active.id);
     if (!task || task.status === newStatus) return;
 
     onStatusChange(String(active.id), newStatus);
-    if (newStatus === 'done') setShowDoneEffect(true);
+    const targetStatus = statuses.find(s => s.id === newStatus);
+    if (targetStatus?.label.toLowerCase() === 'done') setShowDoneEffect(true);
   }
 
   const hideDoneEffect = useCallback(() => setShowDoneEffect(false), []);
 
-  function handleStatusChange(id: string, status: TaskStatus) {
+  function handleStatusChange(id: string, status: string) {
     onStatusChange(id, status);
-    if (status === 'done') setShowDoneEffect(true);
+    const targetStatus = statuses.find(s => s.id === status);
+    if (targetStatus?.label.toLowerCase() === 'done') setShowDoneEffect(true);
   }
 
   const availableOpts = SORT_OPTIONS.filter(o => !sortLevels.find(l => l.key === o.key));
+  const topLevelTasks = tasks.filter(t => !t.parentId);
 
   return (
     <>
@@ -235,19 +316,24 @@ export function KanbanBoard({ tasks, onEditTask, onStatusChange, onAddTask, sele
         onDragEnd={handleDragEnd}
       >
         <div className="flex gap-4 h-full">
-          {COLUMNS.map(col => (
+          {sortedStatuses.map(col => (
             <DroppableColumn
-              key={col.status}
+              key={col.id}
               col={col}
-              tasks={sortTasks(tasks.filter(t => t.status === col.status), sortLevels)}
+              tasks={sortTasks(topLevelTasks.filter(t => t.status === col.id), sortLevels)}
+              allTasks={tasks}
+              statuses={statuses}
               onEditTask={onEditTask}
               onStatusChange={handleStatusChange}
               onAddTask={onAddTask}
-              isDragOver={dragOverColumn === col.status}
+              onAddSubTask={onAddSubTask}
+              isDragOver={dragOverColumn === col.id}
               selectedIds={selectedIds}
               onToggleSelect={onToggleSelect}
             />
           ))}
+
+          <AddStatusButton onAdd={onAddStatus} />
         </div>
 
         <DragOverlay dropAnimation={null}>
@@ -255,6 +341,7 @@ export function KanbanBoard({ tasks, onEditTask, onStatusChange, onAddTask, sele
             <div style={{ transform: 'rotate(2deg)', opacity: 0.9, pointerEvents: 'none' }}>
               <TaskCard
                 task={activeTask}
+                statuses={statuses}
                 onClick={() => {}}
                 onStatusChange={() => {}}
               />

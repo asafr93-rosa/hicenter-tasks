@@ -1,19 +1,33 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Task } from '../types/index';
+import type { Task, StatusConfig } from '../types/index';
+
+export const DEFAULT_STATUSES: StatusConfig[] = [
+  { id: 'set',         label: 'Set',         color: '#6B7280', order: 0 },
+  { id: 'in-progress', label: 'In Progress',  color: '#D97706', order: 1 },
+  { id: 'done',        label: 'Done',         color: '#059669', order: 2 },
+];
+
+const STATUS_COLOR_PALETTE = [
+  '#6366F1', '#EC4899', '#0EA5E9', '#10B981',
+  '#F97316', '#8B5CF6', '#14B8A6', '#EF4444',
+];
 
 interface TaskState {
   tasks: Task[];
+  statuses: StatusConfig[];
   addTask: (task: Omit<Task, 'id' | 'createdAt'>) => void;
   updateTask: (id: string, updates: Partial<Omit<Task, 'id' | 'userId' | 'createdAt'>>) => void;
   deleteTask: (id: string) => void;
   bulkUpdateTasks: (ids: string[], updates: Partial<Omit<Task, 'id' | 'userId' | 'createdAt'>>) => void;
+  addStatus: (label: string) => void;
 }
 
 export const useTaskStore = create<TaskState>()(
   persist(
     (set) => ({
       tasks: [],
+      statuses: DEFAULT_STATUSES,
 
       addTask: (taskData) => {
         const task: Task = {
@@ -31,7 +45,9 @@ export const useTaskStore = create<TaskState>()(
       },
 
       deleteTask: (id) => {
-        set(state => ({ tasks: state.tasks.filter(t => t.id !== id) }));
+        set(state => ({
+          tasks: state.tasks.filter(t => t.id !== id && t.parentId !== id),
+        }));
       },
 
       bulkUpdateTasks: (ids, updates) => {
@@ -39,7 +55,30 @@ export const useTaskStore = create<TaskState>()(
           tasks: state.tasks.map(t => ids.includes(t.id) ? { ...t, ...updates } : t),
         }));
       },
+
+      addStatus: (label) => {
+        const trimmed = label.trim();
+        if (!trimmed) return;
+        set(state => {
+          if (state.statuses.find(s => s.label.toLowerCase() === trimmed.toLowerCase())) return state;
+          const color = STATUS_COLOR_PALETTE[state.statuses.length % STATUS_COLOR_PALETTE.length];
+          const newStatus: StatusConfig = {
+            id: crypto.randomUUID(),
+            label: trimmed,
+            color,
+            order: state.statuses.length,
+          };
+          return { statuses: [...state.statuses, newStatus] };
+        });
+      },
     }),
-    { name: 'hicenter-tasks' }
+    {
+      name: 'hicenter-tasks',
+      onRehydrateStorage: () => (state) => {
+        if (state && (!state.statuses || state.statuses.length === 0)) {
+          state.statuses = DEFAULT_STATUSES;
+        }
+      },
+    }
   )
 );

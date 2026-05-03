@@ -8,12 +8,6 @@ import { ListView } from '../components/ListView';
 import { TableView } from '../components/TableView';
 import type { Task, TaskStatus, TaskPriority, ViewMode, TaskFormData } from '../types/index';
 
-const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
-  { value: 'set', label: 'Set' },
-  { value: 'in-progress', label: 'In Progress' },
-  { value: 'done', label: 'Done' },
-];
-
 const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] = [
   { value: 'high', label: 'High' },
   { value: 'medium', label: 'Medium' },
@@ -59,15 +53,19 @@ function BulkCategoryInput({ onApply, selectStyle }: { onApply: (cat: string) =>
 
 export function Board() {
   const { currentUser } = useAuthStore();
-  const { tasks, addTask, updateTask, deleteTask, bulkUpdateTasks } = useTaskStore();
+  const { tasks, statuses, addTask, updateTask, deleteTask, bulkUpdateTasks, addStatus } = useTaskStore();
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [editingTask, setEditingTask] = useState<Task | null | undefined>(undefined);
   const [defaultStatus, setDefaultStatus] = useState<TaskStatus>('set');
+  const [pendingParentId, setPendingParentId] = useState<string | undefined>(undefined);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
 
-  const userTasks = tasks.filter(t => {
-    if (t.userId !== currentUser) return false;
+  const allUserTasks = tasks.filter(t => t.userId === currentUser);
+
+  // Top-level tasks (no parentId) matching search
+  const userTasks = allUserTasks.filter(t => {
+    if (t.parentId) return false;
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -77,24 +75,27 @@ export function Board() {
     );
   });
 
-  function openNew(status: TaskStatus = 'set') {
+  function openNew(status: TaskStatus = statuses[0]?.id ?? 'set', parentId?: string) {
+    setPendingParentId(parentId);
     setDefaultStatus(status);
     setEditingTask(null);
   }
 
   function openEdit(task: Task) {
+    setPendingParentId(undefined);
     setEditingTask(task);
   }
 
   function closeModal() {
     setEditingTask(undefined);
+    setPendingParentId(undefined);
   }
 
   function handleSave(data: TaskFormData) {
     if (editingTask) {
       updateTask(editingTask.id, data);
     } else {
-      addTask({ ...data, userId: currentUser ?? '' });
+      addTask({ ...data, userId: currentUser ?? '', parentId: pendingParentId });
     }
   }
 
@@ -107,6 +108,11 @@ export function Board() {
 
   function handleStatusChange(id: string, status: TaskStatus) {
     updateTask(id, { status });
+  }
+
+  function handleAddSubTask(parentId: string) {
+    const parent = allUserTasks.find(t => t.id === parentId);
+    openNew(parent?.status ?? statuses[0]?.id ?? 'set', parentId);
   }
 
   function toggleSelect(id: string) {
@@ -131,6 +137,7 @@ export function Board() {
 
   const isModalOpen = editingTask !== undefined;
   const selCount = selectedIds.size;
+  const modalSubTasks = editingTask ? allUserTasks.filter(t => t.parentId === editingTask.id) : [];
 
   return (
     <div className="flex flex-col h-screen" style={{ background: '#F4F7FA' }}>
@@ -145,7 +152,7 @@ export function Board() {
             </h1>
             <p className="text-xs" style={{ color: '#9CA3AF' }}>
               {searchQuery.trim()
-                ? `${userTasks.length} of ${tasks.filter(t => t.userId === currentUser).length} task${tasks.filter(t => t.userId === currentUser).length !== 1 ? 's' : ''}`
+                ? `${userTasks.length} of ${allUserTasks.filter(t => !t.parentId).length} task${allUserTasks.filter(t => !t.parentId).length !== 1 ? 's' : ''}`
                 : `${userTasks.length} task${userTasks.length !== 1 ? 's' : ''}`}
             </p>
           </div>
@@ -183,7 +190,9 @@ export function Board() {
               style={selectStyle}
             >
               <option value="">Status…</option>
-              {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {[...statuses].sort((a, b) => a.order - b.order).map(s => (
+                <option key={s.id} value={s.id}>{s.label}</option>
+              ))}
             </select>
             <select
               value=""
@@ -219,10 +228,13 @@ export function Board() {
             <div className="h-full overflow-x-auto">
               <div className="h-full min-w-[720px] flex flex-col">
                 <KanbanBoard
-                  tasks={userTasks}
+                  tasks={allUserTasks}
+                  statuses={statuses}
                   onEditTask={openEdit}
                   onStatusChange={handleStatusChange}
                   onAddTask={openNew}
+                  onAddSubTask={handleAddSubTask}
+                  onAddStatus={addStatus}
                   selectedIds={selectedIds}
                   onToggleSelect={toggleSelect}
                 />
@@ -233,6 +245,7 @@ export function Board() {
             <div className="h-full overflow-y-auto">
               <ListView
                 tasks={userTasks}
+                statuses={statuses}
                 onEditTask={openEdit}
                 onStatusChange={handleStatusChange}
                 selectedIds={selectedIds}
@@ -245,6 +258,7 @@ export function Board() {
             <div className="h-full overflow-y-auto">
               <TableView
                 tasks={userTasks}
+                statuses={statuses}
                 onEditTask={openEdit}
                 onStatusChange={handleStatusChange}
                 selectedIds={selectedIds}
@@ -259,9 +273,14 @@ export function Board() {
       {isModalOpen && (
         <TaskModal
           task={editingTask ?? null}
-          defaultStatus={defaultStatus}
+          defaultStatus={pendingParentId ? (allUserTasks.find(t => t.id === pendingParentId)?.status ?? defaultStatus) : defaultStatus}
+          pendingParentId={pendingParentId}
+          statuses={statuses}
+          subTasks={modalSubTasks}
           onSave={handleSave}
           onDelete={editingTask ? handleDelete : undefined}
+          onAddSubTask={handleAddSubTask}
+          onEditSubTask={openEdit}
           onClose={closeModal}
         />
       )}

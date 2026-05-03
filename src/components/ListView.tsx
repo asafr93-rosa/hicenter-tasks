@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import type { Task, TaskStatus, TaskPriority } from '../types/index';
+import type { Task, TaskStatus, TaskPriority, StatusConfig } from '../types/index';
 import { formatDate, isOverdue } from '../utils/date';
 
 interface ListViewProps {
   tasks: Task[];
+  statuses: StatusConfig[];
   onEditTask: (task: Task) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
   selectedIds: Set<string>;
@@ -13,15 +14,6 @@ interface ListViewProps {
 
 type SortKey = 'title' | 'status' | 'priority' | 'category' | 'startDate' | 'dueDate';
 type SortLevel = { key: SortKey; asc: boolean };
-
-const STATUS_SEQUENCE: TaskStatus[] = ['set', 'in-progress', 'done'];
-const STATUS_ORDER: Record<TaskStatus, number> = { 'set': 0, 'in-progress': 1, 'done': 2 };
-
-const STATUS_STYLE: Record<TaskStatus, { bg: string; color: string; label: string }> = {
-  'set': { bg: '#F3F4F6', color: '#6B7280', label: 'Set' },
-  'in-progress': { bg: '#FEF3C7', color: '#D97706', label: 'In Progress' },
-  'done': { bg: '#D1FAE5', color: '#059669', label: 'Done' },
-};
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = { 'high': 0, 'medium': 1, 'low': 2 };
 
@@ -40,10 +32,14 @@ const SORT_COLS: { key: SortKey; label: string }[] = [
   { key: 'dueDate',   label: 'Due' },
 ];
 
-function compareByKey(a: Task, b: Task, key: SortKey): number {
+function compareByKey(a: Task, b: Task, key: SortKey, statuses: StatusConfig[]): number {
   switch (key) {
     case 'title':     return a.title.localeCompare(b.title);
-    case 'status':    return STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
+    case 'status': {
+      const orderA = statuses.find(s => s.id === a.status)?.order ?? 99;
+      const orderB = statuses.find(s => s.id === b.status)?.order ?? 99;
+      return orderA - orderB;
+    }
     case 'priority':  return PRIORITY_ORDER[a.priority ?? 'medium'] - PRIORITY_ORDER[b.priority ?? 'medium'];
     case 'category':  return (a.category ?? '').localeCompare(b.category ?? '');
     case 'startDate': return (a.startDate ?? '').localeCompare(b.startDate ?? '');
@@ -54,8 +50,10 @@ function compareByKey(a: Task, b: Task, key: SortKey): number {
   }
 }
 
-export function ListView({ tasks, onEditTask, onStatusChange, selectedIds, onToggleSelect, onSelectAll }: ListViewProps) {
+export function ListView({ tasks, statuses, onEditTask, onStatusChange, selectedIds, onToggleSelect, onSelectAll }: ListViewProps) {
   const [sortLevels, setSortLevels] = useState<SortLevel[]>([{ key: 'dueDate', asc: true }]);
+
+  const sortedStatuses = [...statuses].sort((a, b) => a.order - b.order);
 
   function toggleLevelDir(idx: number) {
     setSortLevels(prev => prev.map((l, i) => i === idx ? { ...l, asc: !l.asc } : l));
@@ -75,7 +73,7 @@ export function ListView({ tasks, onEditTask, onStatusChange, selectedIds, onTog
 
   const sorted = [...tasks].sort((a, b) => {
     for (const { key, asc } of sortLevels) {
-      const cmp = compareByKey(a, b, key);
+      const cmp = compareByKey(a, b, key, statuses);
       if (cmp !== 0) return asc ? cmp : -cmp;
     }
     return 0;
@@ -145,8 +143,11 @@ export function ListView({ tasks, onEditTask, onStatusChange, selectedIds, onTog
 
       {sorted.map(task => {
         const overdue = isOverdue(task.dueDate, task.status);
-        const st = STATUS_STYLE[task.status];
-        const idx = STATUS_SEQUENCE.indexOf(task.status);
+        const statusConfig = statuses.find(s => s.id === task.status);
+        const stColor = statusConfig?.color ?? '#6B7280';
+        const stLabel = statusConfig?.label ?? task.status;
+        const stIdx = sortedStatuses.findIndex(s => s.id === task.status);
+        const nextStatus = sortedStatuses[(stIdx + 1) % sortedStatuses.length]?.id ?? task.status;
         const priority = task.priority ?? 'medium';
         const pt = PRIORITY_STYLE[priority];
         const selected = selectedIds.has(task.id);
@@ -161,7 +162,6 @@ export function ListView({ tasks, onEditTask, onStatusChange, selectedIds, onTog
             }}
             onClick={() => onEditTask(task)}
           >
-            {/* Checkbox */}
             <input
               type="checkbox"
               checked={selected}
@@ -171,12 +171,10 @@ export function ListView({ tasks, onEditTask, onStatusChange, selectedIds, onTog
               style={{ accentColor: '#00B5AD', width: '14px', height: '14px' }}
             />
 
-            {/* Overdue dot */}
             {overdue && (
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#DC2626' }} title="Overdue" />
             )}
 
-            {/* Title + description + category */}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate" style={{ color: '#1A2B4A' }}>{task.title}</p>
               {task.description && (
@@ -189,7 +187,6 @@ export function ListView({ tasks, onEditTask, onStatusChange, selectedIds, onTog
               )}
             </div>
 
-            {/* Priority badge */}
             <span
               className="text-xs font-medium px-1.5 py-0.5 rounded shrink-0 hidden sm:block"
               style={{ background: pt.bg, color: pt.color, fontSize: '10px' }}
@@ -197,23 +194,20 @@ export function ListView({ tasks, onEditTask, onStatusChange, selectedIds, onTog
               {pt.label}
             </span>
 
-            {/* Due date */}
             <span className="text-xs shrink-0 hidden sm:block" style={{ color: overdue ? '#DC2626' : '#9CA3AF', fontWeight: overdue ? 600 : 400 }}>
               {task.dueDate ? formatDate(task.dueDate) : '—'}
             </span>
 
-            {/* Status badge (click to cycle) */}
             <button
               onClick={e => {
                 e.stopPropagation();
-                const next = STATUS_SEQUENCE[(idx + 1) % STATUS_SEQUENCE.length];
-                onStatusChange(task.id, next);
+                onStatusChange(task.id, nextStatus);
               }}
               title="Click to advance status"
               className="px-2 py-1 rounded-full text-xs font-medium cursor-pointer shrink-0"
-              style={{ background: st.bg, color: st.color, border: 'none' }}
+              style={{ background: `${stColor}20`, color: stColor, border: 'none' }}
             >
-              {st.label}
+              {stLabel}
             </button>
           </div>
         );
