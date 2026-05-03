@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import {
   DndContext,
   useDroppable,
+  useDraggable,
   DragOverlay,
   PointerSensor,
   TouchSensor,
@@ -23,6 +24,7 @@ interface KanbanBoardProps {
   onAddTask: (status: TaskStatus) => void;
   onAddSubTask: (parentId: string) => void;
   onAddStatus: (label: string) => void;
+  onReorderStatuses: (sourceId: string, targetId: string) => void;
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
 }
@@ -72,27 +74,63 @@ interface DroppableColumnProps {
   onStatusChange: (id: string, status: TaskStatus) => void;
   onAddTask: (status: TaskStatus) => void;
   onAddSubTask: (parentId: string) => void;
-  isDragOver: boolean;
+  isCardDragOver: boolean;
+  isColumnDragOver: boolean;
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
 }
 
-function DroppableColumn({ col, tasks, allTasks, statuses, onEditTask, onStatusChange, onAddTask, onAddSubTask, isDragOver, selectedIds, onToggleSelect }: DroppableColumnProps) {
-  const { setNodeRef } = useDroppable({ id: col.id });
+function DroppableColumn({ col, tasks, allTasks, statuses, onEditTask, onStatusChange, onAddTask, onAddSubTask, isCardDragOver, isColumnDragOver, selectedIds, onToggleSelect }: DroppableColumnProps) {
+  const { setNodeRef: setDropRef } = useDroppable({ id: col.id });
+
+  const {
+    attributes: handleAttrs,
+    listeners: handleListeners,
+    setNodeRef: setHandleRef,
+    isDragging: isBeingDragged,
+  } = useDraggable({
+    id: `col-handle:${col.id}`,
+    data: { type: 'column', statusId: col.id },
+  });
 
   return (
     <div
-      ref={setNodeRef}
-      className="flex flex-col rounded-xl flex-1 min-w-[240px] transition-colors"
+      ref={setDropRef}
+      className="flex flex-col rounded-xl flex-1 min-w-[240px] transition-all"
       style={{
-        background: isDragOver ? '#DFF5F0' : '#ECEEF1',
+        background: isCardDragOver ? '#DFF5F0' : '#ECEEF1',
         minHeight: 0,
-        outline: isDragOver ? '2px solid #00B5AD' : '2px solid transparent',
-        transition: 'background 0.15s, outline 0.15s',
+        outline: isCardDragOver
+          ? '2px solid #00B5AD'
+          : isColumnDragOver
+            ? '2px dashed #00B5AD'
+            : '2px solid transparent',
+        opacity: isBeingDragged ? 0.45 : 1,
+        transition: 'background 0.15s, outline 0.15s, opacity 0.15s',
       }}
     >
       <div className="flex items-center justify-between px-3 pt-3 pb-2">
         <div className="flex items-center gap-2">
+          {/* Drag handle */}
+          <button
+            ref={setHandleRef}
+            {...handleListeners}
+            {...handleAttrs}
+            className="flex items-center justify-center rounded cursor-grab shrink-0"
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: '2px 3px',
+              color: '#C4C9D4',
+              touchAction: 'none',
+              fontSize: '14px',
+              lineHeight: 1,
+            }}
+            title="Drag to reorder column"
+            onClick={e => e.stopPropagation()}
+          >
+            ⠿
+          </button>
           <span className="w-2.5 h-2.5 rounded-full" style={{ background: col.color }} />
           <span className="text-sm font-semibold" style={{ color: '#1A2B4A' }}>{col.label}</span>
         </div>
@@ -154,7 +192,6 @@ function AddStatusButton({ onAdd }: { onAdd: (label: string) => void }) {
           color: '#9CA3AF',
           fontSize: '11px',
           gap: '4px',
-          marginTop: '0',
         }}
         title="Add new status"
       >
@@ -200,8 +237,9 @@ function AddStatusButton({ onAdd }: { onAdd: (label: string) => void }) {
   );
 }
 
-export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAddTask, onAddSubTask, onAddStatus, selectedIds, onToggleSelect }: KanbanBoardProps) {
+export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAddTask, onAddSubTask, onAddStatus, onReorderStatuses, selectedIds, onToggleSelect }: KanbanBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [activeColumn, setActiveColumn] = useState<StatusConfig | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [showDoneEffect, setShowDoneEffect] = useState(false);
   const [sortLevels, setSortLevels] = useState<SortLevel[]>([{ key: 'priority', asc: true }]);
@@ -230,20 +268,40 @@ export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAdd
   }
 
   function handleDragStart(event: DragStartEvent) {
-    const task = tasks.find(t => t.id === event.active.id);
-    if (task) setActiveTask(task);
+    if (event.active.data.current?.type === 'column') {
+      const col = statuses.find(s => s.id === event.active.data.current?.statusId);
+      if (col) setActiveColumn(col);
+    } else {
+      const task = tasks.find(t => t.id === event.active.id);
+      if (task) setActiveTask(task);
+    }
   }
 
   function handleDragOver(event: DragOverEvent) {
-    setDragOverColumn(event.over ? String(event.over.id) : null);
+    if (event.active.data.current?.type === 'column') {
+      // Show dashed outline on the target column
+      setDragOverColumn(event.over ? String(event.over.id) : null);
+    } else {
+      // Card drag: show filled teal outline
+      setDragOverColumn(event.over ? String(event.over.id) : null);
+    }
   }
 
   function handleDragEnd(event: DragEndEvent) {
+    const isColDrag = !!activeColumn;
     setActiveTask(null);
+    setActiveColumn(null);
     setDragOverColumn(null);
 
     const { active, over } = event;
     if (!over) return;
+
+    if (isColDrag) {
+      const sourceId = active.data.current?.statusId as string;
+      const targetId = String(over.id);
+      if (sourceId && sourceId !== targetId) onReorderStatuses(sourceId, targetId);
+      return;
+    }
 
     const newStatus = String(over.id);
     const task = tasks.find(t => t.id === active.id);
@@ -264,6 +322,7 @@ export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAdd
 
   const availableOpts = SORT_OPTIONS.filter(o => !sortLevels.find(l => l.key === o.key));
   const topLevelTasks = tasks.filter(t => !t.parentId);
+  const isDraggingColumn = !!activeColumn;
 
   return (
     <>
@@ -327,7 +386,8 @@ export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAdd
               onStatusChange={handleStatusChange}
               onAddTask={onAddTask}
               onAddSubTask={onAddSubTask}
-              isDragOver={dragOverColumn === col.id}
+              isCardDragOver={!isDraggingColumn && dragOverColumn === col.id}
+              isColumnDragOver={isDraggingColumn && dragOverColumn === col.id}
               selectedIds={selectedIds}
               onToggleSelect={onToggleSelect}
             />
@@ -345,6 +405,21 @@ export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAdd
                 onClick={() => {}}
                 onStatusChange={() => {}}
               />
+            </div>
+          )}
+          {activeColumn && (
+            <div
+              className="flex items-center gap-2 px-3 py-2 rounded-xl shadow-lg"
+              style={{
+                background: '#ECEEF1',
+                border: '2px solid #00B5AD',
+                opacity: 0.95,
+                pointerEvents: 'none',
+                minWidth: '160px',
+              }}
+            >
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: activeColumn.color }} />
+              <span className="text-sm font-semibold" style={{ color: '#1A2B4A' }}>{activeColumn.label}</span>
             </div>
           )}
         </DragOverlay>

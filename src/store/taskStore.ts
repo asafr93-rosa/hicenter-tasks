@@ -21,6 +21,7 @@ interface TaskState {
   deleteTask: (id: string) => void;
   bulkUpdateTasks: (ids: string[], updates: Partial<Omit<Task, 'id' | 'userId' | 'createdAt'>>) => void;
   addStatus: (label: string) => void;
+  reorderStatuses: (sourceId: string, targetId: string) => void;
 }
 
 export const useTaskStore = create<TaskState>()(
@@ -69,6 +70,19 @@ export const useTaskStore = create<TaskState>()(
             order: state.statuses.length,
           };
           return { statuses: [...state.statuses, newStatus] };
+        });
+      },
+
+      reorderStatuses: (sourceId, targetId) => {
+        set(state => {
+          const sorted = [...state.statuses].sort((a, b) => a.order - b.order);
+          const fromIdx = sorted.findIndex(s => s.id === sourceId);
+          const toIdx = sorted.findIndex(s => s.id === targetId);
+          if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return state;
+          const reordered = [...sorted];
+          const [moved] = reordered.splice(fromIdx, 1);
+          reordered.splice(toIdx, 0, moved);
+          return { statuses: reordered.map((s, i) => ({ ...s, order: i })) };
         });
       },
     }),

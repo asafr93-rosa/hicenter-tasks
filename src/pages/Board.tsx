@@ -53,7 +53,7 @@ function BulkCategoryInput({ onApply, selectStyle }: { onApply: (cat: string) =>
 
 export function Board() {
   const { currentUser } = useAuthStore();
-  const { tasks, statuses, addTask, updateTask, deleteTask, bulkUpdateTasks, addStatus } = useTaskStore();
+  const { tasks, statuses, addTask, updateTask, deleteTask, bulkUpdateTasks, addStatus, reorderStatuses } = useTaskStore();
   const [viewMode, setViewMode] = useState<ViewMode>('kanban');
   const [editingTask, setEditingTask] = useState<Task | null | undefined>(undefined);
   const [defaultStatus, setDefaultStatus] = useState<TaskStatus>('set');
@@ -235,6 +235,7 @@ export function Board() {
                   onAddTask={openNew}
                   onAddSubTask={handleAddSubTask}
                   onAddStatus={addStatus}
+                  onReorderStatuses={reorderStatuses}
                   selectedIds={selectedIds}
                   onToggleSelect={toggleSelect}
                 />
