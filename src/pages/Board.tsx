@@ -236,6 +236,7 @@ export function Board() {
                   onAddSubTask={handleAddSubTask}
                   onAddStatus={addStatus}
                   onReorderStatuses={reorderStatuses}
+                  onReorderTasks={reorderTasks}
                   selectedIds={selectedIds}
                   onToggleSelect={toggleSelect}
                 />

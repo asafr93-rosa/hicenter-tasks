@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useDraggable } from '@dnd-kit/core';
+import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Task, TaskStatus, TaskPriority, StatusConfig } from '../types/index';
 import { formatDate, isOverdue } from '../utils/date';
@@ -43,7 +43,7 @@ export function TaskCard({ task, statuses, subTasks = [], onClick, onStatusChang
   const priority = task.priority ?? 'medium';
   const pt = PRIORITY_STYLE[priority];
 
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
     data: { task },
   });
@@ -76,9 +76,9 @@ export function TaskCard({ task, statuses, subTasks = [], onClick, onStatusChang
           ? '0 12px 28px rgba(0,0,0,0.18)'
           : '0 1px 3px rgba(0,0,0,0.06)',
         opacity: isDragging ? 0.45 : 1,
-        transform: CSS.Translate.toString(transform),
+        transform: CSS.Transform.toString(transform),
         cursor: isDragging ? 'grabbing' : 'grab',
-        transition: isDragging ? 'none' : 'box-shadow 0.15s',
+        transition: isDragging ? 'none' : `${transition ?? ''} box-shadow 0.15s`.trim(),
         zIndex: isDragging ? 50 : undefined,
         position: 'relative',
         touchAction: 'none',

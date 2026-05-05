@@ -12,9 +12,15 @@ import {
   type DragStartEvent,
   type DragOverEvent,
 } from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
 import type { Task, TaskStatus, TaskPriority, StatusConfig } from '../types/index';
 import { TaskCard } from './TaskCard';
 import { DoneEffect } from './DoneEffect';
+import { formatDate, isOverdue } from '../utils/date';
 
 interface KanbanBoardProps {
   tasks: Task[];
@@ -25,6 +31,7 @@ interface KanbanBoardProps {
   onAddSubTask: (parentId: string) => void;
   onAddStatus: (label: string) => void;
   onReorderStatuses: (sourceId: string, targetId: string) => void;
+  onReorderTasks: (orderedIds: string[]) => void;
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
 }
@@ -33,6 +40,12 @@ type SortKey = 'priority' | 'category' | 'dueDate' | 'startDate' | 'title' | 'ma
 type SortLevel = { key: SortKey; asc: boolean };
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = { 'high': 0, 'medium': 1, 'low': 2 };
+
+const PRIORITY_STYLE: Record<TaskPriority, { bg: string; color: string; label: string }> = {
+  'high':   { bg: '#FEE2E2', color: '#DC2626', label: 'High' },
+  'medium': { bg: '#FEF3C7', color: '#D97706', label: 'Med' },
+  'low':    { bg: '#F3F4F6', color: '#9CA3AF', label: 'Low' },
+};
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'manual',    label: '⠿ Manual' },
@@ -113,7 +126,6 @@ function DroppableColumn({ col, tasks, allTasks, statuses, onEditTask, onStatusC
     >
       <div className="flex items-center justify-between px-3 pt-3 pb-2">
         <div className="flex items-center gap-2">
-          {/* Drag handle */}
           <button
             ref={setHandleRef}
             {...handleListeners}
@@ -142,23 +154,25 @@ function DroppableColumn({ col, tasks, allTasks, statuses, onEditTask, onStatusC
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-3 flex flex-col gap-2">
-        {tasks.map(task => {
-          const subTasks = allTasks.filter(t => t.parentId === task.id);
-          return (
-            <TaskCard
-              key={task.id}
-              task={task}
-              statuses={statuses}
-              subTasks={subTasks}
-              onClick={() => onEditTask(task)}
-              onStatusChange={status => onStatusChange(task.id, status)}
-              onAddSubTask={onAddSubTask}
-              onEditSubTask={onEditTask}
-              isSelected={selectedIds.has(task.id)}
-              onToggleSelect={onToggleSelect}
-            />
-          );
-        })}
+        <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+          {tasks.map(task => {
+            const subTasks = allTasks.filter(t => t.parentId === task.id);
+            return (
+              <TaskCard
+                key={task.id}
+                task={task}
+                statuses={statuses}
+                subTasks={subTasks}
+                onClick={() => onEditTask(task)}
+                onStatusChange={status => onStatusChange(task.id, status)}
+                onAddSubTask={onAddSubTask}
+                onEditSubTask={onEditTask}
+                isSelected={selectedIds.has(task.id)}
+                onToggleSelect={onToggleSelect}
+              />
+            );
+          })}
+        </SortableContext>
         <button
           onClick={() => onAddTask(col.id)}
           className="w-full py-2 rounded-lg text-sm font-medium cursor-pointer mt-1"
@@ -239,8 +253,9 @@ function AddStatusButton({ onAdd }: { onAdd: (label: string) => void }) {
   );
 }
 
-export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAddTask, onAddSubTask, onAddStatus, onReorderStatuses, selectedIds, onToggleSelect }: KanbanBoardProps) {
+export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAddTask, onAddSubTask, onAddStatus, onReorderStatuses, onReorderTasks, selectedIds, onToggleSelect }: KanbanBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [activeColumn, setActiveColumn] = useState<StatusConfig | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [showDoneEffect, setShowDoneEffect] = useState(false);
@@ -274,26 +289,39 @@ export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAdd
       const col = statuses.find(s => s.id === event.active.data.current?.statusId);
       if (col) setActiveColumn(col);
     } else {
-      const task = tasks.find(t => t.id === event.active.id);
+      const taskId = String(event.active.id);
+      setActiveId(taskId);
+      const task = tasks.find(t => t.id === taskId);
       if (task) setActiveTask(task);
     }
   }
 
   function handleDragOver(event: DragOverEvent) {
-    if (event.active.data.current?.type === 'column') {
-      // Show dashed outline on the target column
+    if (activeColumn) {
       setDragOverColumn(event.over ? String(event.over.id) : null);
-    } else {
-      // Card drag: show filled teal outline
-      setDragOverColumn(event.over ? String(event.over.id) : null);
+      return;
     }
+    const overId = event.over ? String(event.over.id) : null;
+    if (!overId) { setDragOverColumn(null); return; }
+    // Over a column droppable
+    if (statuses.some(s => s.id === overId)) {
+      setDragOverColumn(overId);
+      return;
+    }
+    // Over a task — show that task's column as the target
+    const overTask = tasks.find(t => t.id === overId);
+    if (overTask) setDragOverColumn(overTask.status);
   }
 
   function handleDragEnd(event: DragEndEvent) {
     const isColDrag = !!activeColumn;
+    const savedActiveTask = activeTask;
+    const savedActiveId = activeId;
+
     setActiveTask(null);
     setActiveColumn(null);
     setDragOverColumn(null);
+    setActiveId(null);
 
     const { active, over } = event;
     if (!over) return;
@@ -305,13 +333,29 @@ export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAdd
       return;
     }
 
-    const newStatus = String(over.id);
-    const task = tasks.find(t => t.id === active.id);
-    if (!task || task.status === newStatus) return;
+    if (!savedActiveTask || !savedActiveId) return;
 
-    onStatusChange(String(active.id), newStatus);
-    const targetStatus = statuses.find(s => s.id === newStatus);
-    if (targetStatus?.label.toLowerCase() === 'done') setShowDoneEffect(true);
+    const overId = String(over.id);
+    const sourceColId = savedActiveTask.status;
+
+    const isOverColumn = statuses.some(s => s.id === overId);
+    const overTask = !isOverColumn ? tasks.find(t => t.id === overId) : null;
+    const targetColId = isOverColumn ? overId : (overTask?.status ?? null);
+    if (!targetColId) return;
+
+    if (targetColId === sourceColId) {
+      // Same-column reorder
+      if (overId === savedActiveId) return;
+      const colTasks = sortTasks(topLevelTasks.filter(t => t.status === sourceColId), sortLevels);
+      const oldIdx = colTasks.findIndex(t => t.id === savedActiveId);
+      const newIdx = colTasks.findIndex(t => t.id === overId);
+      if (oldIdx !== -1 && newIdx !== -1 && oldIdx !== newIdx) {
+        onReorderTasks(arrayMove(colTasks, oldIdx, newIdx).map(t => t.id));
+      }
+    } else {
+      // Cross-column move — change status
+      handleStatusChange(savedActiveId, targetColId);
+    }
   }
 
   const hideDoneEffect = useCallback(() => setShowDoneEffect(false), []);
@@ -388,7 +432,8 @@ export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAdd
               onStatusChange={handleStatusChange}
               onAddTask={onAddTask}
               onAddSubTask={onAddSubTask}
-              isCardDragOver={!isDraggingColumn && dragOverColumn === col.id}
+              // Only highlight when a card from a DIFFERENT column is hovering here
+              isCardDragOver={!isDraggingColumn && !!activeTask && dragOverColumn === col.id && activeTask.status !== col.id}
               isColumnDragOver={isDraggingColumn && dragOverColumn === col.id}
               selectedIds={selectedIds}
               onToggleSelect={onToggleSelect}
@@ -398,17 +443,50 @@ export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAdd
           <AddStatusButton onAdd={onAddStatus} />
         </div>
 
+        {/* DragOverlay renders outside SortableContext — must NOT use TaskCard (it calls useSortable) */}
         <DragOverlay dropAnimation={null}>
-          {activeTask && (
-            <div style={{ transform: 'rotate(2deg)', opacity: 0.9, pointerEvents: 'none' }}>
-              <TaskCard
-                task={activeTask}
-                statuses={statuses}
-                onClick={() => {}}
-                onStatusChange={() => {}}
-              />
-            </div>
-          )}
+          {activeTask && (() => {
+            const overdue = isOverdue(activeTask.dueDate, activeTask.status);
+            const priority = activeTask.priority ?? 'medium';
+            const pt = PRIORITY_STYLE[priority];
+            const statusConfig = statuses.find(s => s.id === activeTask.status);
+            const stColor = statusConfig?.color ?? '#6B7280';
+            const stLabel = statusConfig?.label ?? activeTask.status;
+            return (
+              <div style={{ transform: 'rotate(2deg)', opacity: 0.92, pointerEvents: 'none' }}>
+                <div
+                  className="bg-white rounded-xl p-3"
+                  style={{
+                    border: '1px solid #E5E7EB',
+                    boxShadow: '0 12px 28px rgba(0,0,0,0.18)',
+                    minWidth: '220px',
+                    maxWidth: '300px',
+                  }}
+                >
+                  <div className="flex items-start gap-2 mb-2">
+                    {overdue && <span className="mt-1 shrink-0 w-2 h-2 rounded-full" style={{ background: '#DC2626' }} />}
+                    <p className="text-sm font-semibold leading-snug flex-1" style={{ color: '#1A2B4A' }}>
+                      {activeTask.title}
+                    </p>
+                    <span className="text-xs font-medium px-1.5 py-0.5 rounded shrink-0" style={{ background: pt.bg, color: pt.color, fontSize: '10px' }}>
+                      {pt.label}
+                    </span>
+                  </div>
+                  {activeTask.dueDate && (
+                    <p className="text-xs mb-2" style={{ color: overdue ? '#DC2626' : '#9CA3AF', fontWeight: overdue ? 600 : 400 }}>
+                      {formatDate(activeTask.dueDate)}
+                    </p>
+                  )}
+                  <span
+                    className="text-xs font-medium px-2 py-0.5 rounded-full"
+                    style={{ background: `${stColor}20`, color: stColor }}
+                  >
+                    {stLabel}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
           {activeColumn && (
             <div
               className="flex items-center gap-2 px-3 py-2 rounded-xl shadow-lg"
