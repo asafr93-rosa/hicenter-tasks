@@ -29,12 +29,13 @@ interface KanbanBoardProps {
   onToggleSelect: (id: string) => void;
 }
 
-type SortKey = 'priority' | 'category' | 'dueDate' | 'startDate' | 'title';
+type SortKey = 'priority' | 'category' | 'dueDate' | 'startDate' | 'title' | 'manual';
 type SortLevel = { key: SortKey; asc: boolean };
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = { 'high': 0, 'medium': 1, 'low': 2 };
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: 'manual',    label: '⠿ Manual' },
   { key: 'priority',  label: 'Priority' },
   { key: 'category',  label: 'Category' },
   { key: 'dueDate',   label: 'Due Date' },
@@ -44,6 +45,7 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 
 function compareByKey(a: Task, b: Task, key: SortKey): number {
   switch (key) {
+    case 'manual':    return (a.manualOrder ?? Infinity) - (b.manualOrder ?? Infinity);
     case 'priority':  return PRIORITY_ORDER[a.priority ?? 'medium'] - PRIORITY_ORDER[b.priority ?? 'medium'];
     case 'category':  return (a.category ?? '').localeCompare(b.category ?? '');
     case 'dueDate':

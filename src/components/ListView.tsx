@@ -1,4 +1,19 @@
 import { useState } from 'react';
+import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { Task, TaskStatus, TaskPriority, StatusConfig } from '../types/index';
 import { formatDate, isOverdue } from '../utils/date';
 
@@ -7,6 +22,7 @@ interface ListViewProps {
   statuses: StatusConfig[];
   onEditTask: (task: Task) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
+  onReorderTasks: (orderedIds: string[]) => void;
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
   onSelectAll: (ids: string[]) => void;
@@ -50,8 +66,123 @@ function compareByKey(a: Task, b: Task, key: SortKey, statuses: StatusConfig[]):
   }
 }
 
-export function ListView({ tasks, statuses, onEditTask, onStatusChange, selectedIds, onToggleSelect, onSelectAll }: ListViewProps) {
+interface SortableRowProps {
+  task: Task;
+  statuses: StatusConfig[];
+  sortedStatuses: StatusConfig[];
+  onEditTask: (task: Task) => void;
+  onStatusChange: (id: string, status: TaskStatus) => void;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+}
+
+function SortableRow({ task, statuses, sortedStatuses, onEditTask, onStatusChange, selectedIds, onToggleSelect }: SortableRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
+
+  const overdue = isOverdue(task.dueDate, task.status);
+  const statusConfig = statuses.find(s => s.id === task.status);
+  const stColor = statusConfig?.color ?? '#6B7280';
+  const stLabel = statusConfig?.label ?? task.status;
+  const stIdx = sortedStatuses.findIndex(s => s.id === task.status);
+  const nextStatus = sortedStatuses[(stIdx + 1) % sortedStatuses.length]?.id ?? task.status;
+  const priority = task.priority ?? 'medium';
+  const pt = PRIORITY_STYLE[priority];
+  const selected = selectedIds.has(task.id);
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        zIndex: isDragging ? 10 : 'auto',
+        position: 'relative',
+        border: selected ? '2px solid #00B5AD' : '1px solid #E5E7EB',
+        boxShadow: isDragging ? '0 8px 24px rgba(0,0,0,0.12)' : '0 1px 3px rgba(0,0,0,0.05)',
+      }}
+      className="bg-white rounded-xl px-3 py-3 flex items-center gap-3 cursor-pointer"
+      onClick={() => onEditTask(task)}
+    >
+      <button
+        {...listeners}
+        {...attributes}
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: 'none',
+          border: 'none',
+          padding: '0 2px',
+          cursor: isDragging ? 'grabbing' : 'grab',
+          color: '#C4C9D4',
+          fontSize: '16px',
+          touchAction: 'none',
+          flexShrink: 0,
+          lineHeight: 1,
+        }}
+        title="Drag to reorder"
+      >
+        ⠿
+      </button>
+
+      <input
+        type="checkbox"
+        checked={selected}
+        onClick={e => e.stopPropagation()}
+        onChange={e => { e.stopPropagation(); onToggleSelect(task.id); }}
+        className="cursor-pointer shrink-0"
+        style={{ accentColor: '#00B5AD', width: '14px', height: '14px' }}
+      />
+
+      {overdue && (
+        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#DC2626' }} title="Overdue" />
+      )}
+
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold truncate" style={{ color: '#1A2B4A' }}>{task.title}</p>
+        {task.description && (
+          <p className="text-xs truncate mt-0.5" style={{ color: '#9CA3AF' }}>{task.description}</p>
+        )}
+        {task.category && (
+          <span className="inline-block text-xs mt-0.5 px-1.5 py-0 rounded" style={{ background: '#EEF2FF', color: '#6366F1', fontSize: '10px' }}>
+            {task.category}
+          </span>
+        )}
+      </div>
+
+      <span
+        className="text-xs font-medium px-1.5 py-0.5 rounded shrink-0 hidden sm:block"
+        style={{ background: pt.bg, color: pt.color, fontSize: '10px' }}
+      >
+        {pt.label}
+      </span>
+
+      <span className="text-xs shrink-0 hidden sm:block" style={{ color: overdue ? '#DC2626' : '#9CA3AF', fontWeight: overdue ? 600 : 400 }}>
+        {task.dueDate ? formatDate(task.dueDate) : '—'}
+      </span>
+
+      <button
+        onClick={e => {
+          e.stopPropagation();
+          onStatusChange(task.id, nextStatus);
+        }}
+        title="Click to advance status"
+        className="px-2 py-1 rounded-full text-xs font-medium cursor-pointer shrink-0"
+        style={{ background: `${stColor}20`, color: stColor, border: 'none' }}
+      >
+        {stLabel}
+      </button>
+    </div>
+  );
+}
+
+export function ListView({ tasks, statuses, onEditTask, onStatusChange, onReorderTasks, selectedIds, onToggleSelect, onSelectAll }: ListViewProps) {
   const [sortLevels, setSortLevels] = useState<SortLevel[]>([{ key: 'dueDate', asc: true }]);
+  const [isManual, setIsManual] = useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor,   { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
 
   const sortedStatuses = [...statuses].sort((a, b) => a.order - b.order);
 
@@ -71,7 +202,9 @@ export function ListView({ tasks, statuses, onEditTask, onStatusChange, selected
     setSortLevels(prev => [...prev, { key, asc: true }]);
   }
 
-  const sorted = [...tasks].sort((a, b) => {
+  const manualSorted = [...tasks].sort((a, b) => (a.manualOrder ?? Infinity) - (b.manualOrder ?? Infinity));
+
+  const autoSorted = [...tasks].sort((a, b) => {
     for (const { key, asc } of sortLevels) {
       const cmp = compareByKey(a, b, key, statuses);
       if (cmp !== 0) return asc ? cmp : -cmp;
@@ -79,8 +212,20 @@ export function ListView({ tasks, statuses, onEditTask, onStatusChange, selected
     return 0;
   });
 
+  const sorted = isManual ? manualSorted : autoSorted;
+
   const allSelected = sorted.length > 0 && sorted.every(t => selectedIds.has(t.id));
   const availableCols = SORT_COLS.filter(c => !sortLevels.find(l => l.key === c.key));
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIdx = manualSorted.findIndex(t => t.id === String(active.id));
+    const newIdx = manualSorted.findIndex(t => t.id === String(over.id));
+    if (oldIdx === -1 || newIdx === -1) return;
+    const reordered = arrayMove(manualSorted, oldIdx, newIdx);
+    onReorderTasks(reordered.map(t => t.id));
+  }
 
   if (tasks.length === 0) {
     return (
@@ -99,119 +244,163 @@ export function ListView({ tasks, statuses, onEditTask, onStatusChange, selected
           checked={allSelected}
           onChange={() => allSelected ? onSelectAll([]) : onSelectAll(sorted.map(t => t.id))}
           className="cursor-pointer shrink-0"
-          style={{ accentColor: '#00B5AD', width: '14px', height: '14px', marginRight: '4px' }}
+          style={{ accentColor: '#00B5AD', width: '14px', height: '14px', marginRight: '2px' }}
         />
-        <span className="text-xs" style={{ color: '#9CA3AF' }}>Sort:</span>
 
-        {sortLevels.map((level, i) => (
-          <div key={i} className="flex items-center gap-0.5">
-            {i > 0 && <span className="text-xs mx-0.5" style={{ color: '#D1D5DB' }}>›</span>}
-            <div className="flex items-center rounded overflow-hidden" style={{ border: '1px solid #C4C9D4' }}>
-              <button
-                onClick={() => toggleLevelDir(i)}
-                className="px-2 py-0.5 text-xs font-medium cursor-pointer"
-                style={{ background: '#E0F7F5', color: '#00B5AD', border: 'none' }}
-              >
-                {SORT_COLS.find(c => c.key === level.key)?.label} {level.asc ? '↑' : '↓'}
-              </button>
-              {sortLevels.length > 1 && (
-                <button
-                  onClick={() => removeLevel(i)}
-                  className="px-1.5 py-0.5 text-xs cursor-pointer"
-                  style={{ background: '#F3F4F6', color: '#9CA3AF', border: 'none', borderLeft: '1px solid #E5E7EB' }}
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
+        {/* Manual sort toggle */}
+        <button
+          onClick={() => setIsManual(p => !p)}
+          className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium cursor-pointer"
+          style={{
+            background: isManual ? '#00B5AD' : '#F3F4F6',
+            color: isManual ? '#fff' : '#6B7280',
+            border: `1px solid ${isManual ? '#00B5AD' : '#E5E7EB'}`,
+          }}
+          title={isManual ? 'Switch to field sort' : 'Switch to manual drag sort'}
+        >
+          ⠿ Manual
+        </button>
 
-        {availableCols.length > 0 && (
-          <select
-            value=""
-            onChange={e => { if (e.target.value) addLevel(e.target.value as SortKey); }}
-            style={{ padding: '2px 6px', borderRadius: '6px', border: '1px solid #C4C9D4', fontSize: '11px', color: '#9CA3AF', background: '#fff', cursor: 'pointer', outline: 'none' }}
-          >
-            <option value="">+ Add level</option>
-            {availableCols.map(c => (
-              <option key={c.key} value={c.key}>{c.label}</option>
+        {isManual ? (
+          <span className="text-xs" style={{ color: '#9CA3AF' }}>Drag rows to reorder</span>
+        ) : (
+          <>
+            <span className="text-xs" style={{ color: '#9CA3AF' }}>Sort:</span>
+
+            {sortLevels.map((level, i) => (
+              <div key={i} className="flex items-center gap-0.5">
+                {i > 0 && <span className="text-xs mx-0.5" style={{ color: '#D1D5DB' }}>›</span>}
+                <div className="flex items-center rounded overflow-hidden" style={{ border: '1px solid #C4C9D4' }}>
+                  <button
+                    onClick={() => toggleLevelDir(i)}
+                    className="px-2 py-0.5 text-xs font-medium cursor-pointer"
+                    style={{ background: '#E0F7F5', color: '#00B5AD', border: 'none' }}
+                  >
+                    {SORT_COLS.find(c => c.key === level.key)?.label} {level.asc ? '↑' : '↓'}
+                  </button>
+                  {sortLevels.length > 1 && (
+                    <button
+                      onClick={() => removeLevel(i)}
+                      className="px-1.5 py-0.5 text-xs cursor-pointer"
+                      style={{ background: '#F3F4F6', color: '#9CA3AF', border: 'none', borderLeft: '1px solid #E5E7EB' }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
             ))}
-          </select>
+
+            {availableCols.length > 0 && (
+              <select
+                value=""
+                onChange={e => { if (e.target.value) addLevel(e.target.value as SortKey); }}
+                style={{ padding: '2px 6px', borderRadius: '6px', border: '1px solid #C4C9D4', fontSize: '11px', color: '#9CA3AF', background: '#fff', cursor: 'pointer', outline: 'none' }}
+              >
+                <option value="">+ Add level</option>
+                {availableCols.map(c => (
+                  <option key={c.key} value={c.key}>{c.label}</option>
+                ))}
+              </select>
+            )}
+          </>
         )}
       </div>
 
-      {sorted.map(task => {
-        const overdue = isOverdue(task.dueDate, task.status);
-        const statusConfig = statuses.find(s => s.id === task.status);
-        const stColor = statusConfig?.color ?? '#6B7280';
-        const stLabel = statusConfig?.label ?? task.status;
-        const stIdx = sortedStatuses.findIndex(s => s.id === task.status);
-        const nextStatus = sortedStatuses[(stIdx + 1) % sortedStatuses.length]?.id ?? task.status;
-        const priority = task.priority ?? 'medium';
-        const pt = PRIORITY_STYLE[priority];
-        const selected = selectedIds.has(task.id);
-
-        return (
-          <div
-            key={task.id}
-            className="bg-white rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer"
-            style={{
-              border: selected ? '2px solid #00B5AD' : '1px solid #E5E7EB',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-            }}
-            onClick={() => onEditTask(task)}
-          >
-            <input
-              type="checkbox"
-              checked={selected}
-              onClick={e => e.stopPropagation()}
-              onChange={e => { e.stopPropagation(); onToggleSelect(task.id); }}
-              className="cursor-pointer shrink-0"
-              style={{ accentColor: '#00B5AD', width: '14px', height: '14px' }}
-            />
-
-            {overdue && (
-              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#DC2626' }} title="Overdue" />
-            )}
-
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold truncate" style={{ color: '#1A2B4A' }}>{task.title}</p>
-              {task.description && (
-                <p className="text-xs truncate mt-0.5" style={{ color: '#9CA3AF' }}>{task.description}</p>
-              )}
-              {task.category && (
-                <span className="inline-block text-xs mt-0.5 px-1.5 py-0 rounded" style={{ background: '#EEF2FF', color: '#6366F1', fontSize: '10px' }}>
-                  {task.category}
-                </span>
-              )}
+      {isManual ? (
+        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+          <SortableContext items={manualSorted.map(t => t.id)} strategy={verticalListSortingStrategy}>
+            <div className="flex flex-col gap-2">
+              {manualSorted.map(task => (
+                <SortableRow
+                  key={task.id}
+                  task={task}
+                  statuses={statuses}
+                  sortedStatuses={sortedStatuses}
+                  onEditTask={onEditTask}
+                  onStatusChange={onStatusChange}
+                  selectedIds={selectedIds}
+                  onToggleSelect={onToggleSelect}
+                />
+              ))}
             </div>
+          </SortableContext>
+        </DndContext>
+      ) : (
+        <>
+          {autoSorted.map(task => {
+            const overdue = isOverdue(task.dueDate, task.status);
+            const statusConfig = statuses.find(s => s.id === task.status);
+            const stColor = statusConfig?.color ?? '#6B7280';
+            const stLabel = statusConfig?.label ?? task.status;
+            const stIdx = sortedStatuses.findIndex(s => s.id === task.status);
+            const nextStatus = sortedStatuses[(stIdx + 1) % sortedStatuses.length]?.id ?? task.status;
+            const priority = task.priority ?? 'medium';
+            const pt = PRIORITY_STYLE[priority];
+            const selected = selectedIds.has(task.id);
 
-            <span
-              className="text-xs font-medium px-1.5 py-0.5 rounded shrink-0 hidden sm:block"
-              style={{ background: pt.bg, color: pt.color, fontSize: '10px' }}
-            >
-              {pt.label}
-            </span>
+            return (
+              <div
+                key={task.id}
+                className="bg-white rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer"
+                style={{
+                  border: selected ? '2px solid #00B5AD' : '1px solid #E5E7EB',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                }}
+                onClick={() => onEditTask(task)}
+              >
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => { e.stopPropagation(); onToggleSelect(task.id); }}
+                  className="cursor-pointer shrink-0"
+                  style={{ accentColor: '#00B5AD', width: '14px', height: '14px' }}
+                />
 
-            <span className="text-xs shrink-0 hidden sm:block" style={{ color: overdue ? '#DC2626' : '#9CA3AF', fontWeight: overdue ? 600 : 400 }}>
-              {task.dueDate ? formatDate(task.dueDate) : '—'}
-            </span>
+                {overdue && (
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#DC2626' }} title="Overdue" />
+                )}
 
-            <button
-              onClick={e => {
-                e.stopPropagation();
-                onStatusChange(task.id, nextStatus);
-              }}
-              title="Click to advance status"
-              className="px-2 py-1 rounded-full text-xs font-medium cursor-pointer shrink-0"
-              style={{ background: `${stColor}20`, color: stColor, border: 'none' }}
-            >
-              {stLabel}
-            </button>
-          </div>
-        );
-      })}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate" style={{ color: '#1A2B4A' }}>{task.title}</p>
+                  {task.description && (
+                    <p className="text-xs truncate mt-0.5" style={{ color: '#9CA3AF' }}>{task.description}</p>
+                  )}
+                  {task.category && (
+                    <span className="inline-block text-xs mt-0.5 px-1.5 py-0 rounded" style={{ background: '#EEF2FF', color: '#6366F1', fontSize: '10px' }}>
+                      {task.category}
+                    </span>
+                  )}
+                </div>
+
+                <span
+                  className="text-xs font-medium px-1.5 py-0.5 rounded shrink-0 hidden sm:block"
+                  style={{ background: pt.bg, color: pt.color, fontSize: '10px' }}
+                >
+                  {pt.label}
+                </span>
+
+                <span className="text-xs shrink-0 hidden sm:block" style={{ color: overdue ? '#DC2626' : '#9CA3AF', fontWeight: overdue ? 600 : 400 }}>
+                  {task.dueDate ? formatDate(task.dueDate) : '—'}
+                </span>
+
+                <button
+                  onClick={e => {
+                    e.stopPropagation();
+                    onStatusChange(task.id, nextStatus);
+                  }}
+                  title="Click to advance status"
+                  className="px-2 py-1 rounded-full text-xs font-medium cursor-pointer shrink-0"
+                  style={{ background: `${stColor}20`, color: stColor, border: 'none' }}
+                >
+                  {stLabel}
+                </button>
+              </div>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }

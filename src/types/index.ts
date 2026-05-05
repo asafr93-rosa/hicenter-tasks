@@ -25,6 +25,7 @@ export interface Task {
   dueDate: string;
   createdAt: string;
   parentId?: string;
+  manualOrder?: number;
 }
 
 export type ViewMode = 'kanban' | 'list' | 'table';

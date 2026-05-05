@@ -20,6 +20,7 @@ interface TaskState {
   updateTask: (id: string, updates: Partial<Omit<Task, 'id' | 'userId' | 'createdAt'>>) => void;
   deleteTask: (id: string) => void;
   bulkUpdateTasks: (ids: string[], updates: Partial<Omit<Task, 'id' | 'userId' | 'createdAt'>>) => void;
+  reorderTasks: (orderedIds: string[]) => void;
   addStatus: (label: string) => void;
   reorderStatuses: (sourceId: string, targetId: string) => void;
 }
@@ -31,12 +32,16 @@ export const useTaskStore = create<TaskState>()(
       statuses: DEFAULT_STATUSES,
 
       addTask: (taskData) => {
-        const task: Task = {
-          ...taskData,
-          id: crypto.randomUUID(),
-          createdAt: new Date().toISOString(),
-        };
-        set(state => ({ tasks: [...state.tasks, task] }));
+        set(state => {
+          const maxOrder = state.tasks.reduce((m, t) => Math.max(m, t.manualOrder ?? -1), -1);
+          const task: Task = {
+            ...taskData,
+            id: crypto.randomUUID(),
+            createdAt: new Date().toISOString(),
+            manualOrder: maxOrder + 1,
+          };
+          return { tasks: [...state.tasks, task] };
+        });
       },
 
       updateTask: (id, updates) => {
@@ -54,6 +59,15 @@ export const useTaskStore = create<TaskState>()(
       bulkUpdateTasks: (ids, updates) => {
         set(state => ({
           tasks: state.tasks.map(t => ids.includes(t.id) ? { ...t, ...updates } : t),
+        }));
+      },
+
+      reorderTasks: (orderedIds) => {
+        set(state => ({
+          tasks: state.tasks.map(t => {
+            const idx = orderedIds.indexOf(t.id);
+            return idx !== -1 ? { ...t, manualOrder: idx } : t;
+          }),
         }));
       },
 
@@ -89,8 +103,15 @@ export const useTaskStore = create<TaskState>()(
     {
       name: 'hicenter-tasks',
       onRehydrateStorage: () => (state) => {
-        if (state && (!state.statuses || state.statuses.length === 0)) {
-          state.statuses = DEFAULT_STATUSES;
+        if (state) {
+          if (!state.statuses || state.statuses.length === 0) {
+            state.statuses = DEFAULT_STATUSES;
+          }
+          // Migrate existing tasks that don't have manualOrder
+          let nextOrder = state.tasks.reduce((m, t) => Math.max(m, t.manualOrder ?? -1), -1) + 1;
+          state.tasks = state.tasks.map(t =>
+            t.manualOrder === undefined ? { ...t, manualOrder: nextOrder++ } : t
+          );
         }
       },
     }
