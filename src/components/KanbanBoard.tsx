@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import {
   DndContext,
+  closestCenter,
   useDroppable,
   useDraggable,
   DragOverlay,
@@ -351,6 +352,8 @@ export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAdd
       const newIdx = colTasks.findIndex(t => t.id === overId);
       if (oldIdx !== -1 && newIdx !== -1 && oldIdx !== newIdx) {
         onReorderTasks(arrayMove(colTasks, oldIdx, newIdx).map(t => t.id));
+        // Auto-switch to manual sort so the new position sticks visually
+        setSortLevels([{ key: 'manual', asc: true }]);
       }
     } else {
       // Cross-column move — change status
@@ -416,6 +419,7 @@ export function KanbanBoard({ tasks, statuses, onEditTask, onStatusChange, onAdd
 
       <DndContext
         sensors={sensors}
+        collisionDetection={closestCenter}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
